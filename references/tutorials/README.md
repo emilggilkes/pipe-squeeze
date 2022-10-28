@@ -1,10 +1,10 @@
 # Usage
 
-## [ddp_intro_cpu_mac](https://google.com)
+## [ddp_intro_cpu_mac](https://github.com/emilggilkes/pipe-squeeze/blob/main/references/tutorials/ddp_intro_cpu_mac.py)
 
 This script contains demo functions for regular data parallel, checkpointing, model paralelism, and pipeline parallelism. Links to the original tutorials are [here](https://github.com/pytorch/tutorials/blob/master/intermediate_source/ddp_tutorial.rst) and [here](https://pytorch.org/docs/stable/pipeline.html). The only modifications I made was replacing CUDA device calls with CPU.
 
-## [ddp_pipeline_cpu_mac](https://google.com)
+## [ddp_pipeline_cpu_mac](https://github.com/emilggilkes/pipe-squeeze/blob/main/references/tutorials/ddp_pipeline_cpu_mac.py)
 
 This script demonstrates training a transformer model using distributed data parallel and pipeline parallelism. The tutorial's design uses four devices in total. The pipeline initialized with 8 transformer layers on one device and 8 transformer layers on the other device. One pipe is setup across devices 0 and 1 and another across devices 2 and 3. Both pipes are then replicated using DistributedDataParallel.
 
