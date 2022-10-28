@@ -18,5 +18,5 @@ conda install -c conda-forge numpy
 
 ```
 
-The original tutorial on the Pytorch website has a bug, so use [this version](https://github.com/pytorch/tutorials/blob/master/advanced_source/ddp_pipeline.py) on the Pytorch github instead.
+The original tutorial on the Pytorch website has a [bug](https://github.com/pytorch/pytorch/issues/68407), so use [this version](https://github.com/pytorch/tutorials/blob/master/advanced_source/ddp_pipeline.py) on the Pytorch github instead.
 
