@@ -10,5 +10,13 @@ This script demonstrates training a transformer model using distributed data par
 
 The only modifications I made to the original tutorial is replacing CUDA device calls with CPU and switching from NCCL backend to GLOO, since NCCL would raise an error (assuming this is because we're using CPU).
 
+I ran the scripts in the following environment (automaticall installs pytorch==0.12.0):
+```
+conda create -n torchtext_env python=3.8
+conda install -c pytorch torchtext==0.13.0 torchdata==0.4.0
+conda install -c conda-forge numpy
+
+```
+
 The original tutorial on the Pytorch website has a bug, so use [this version](https://github.com/pytorch/tutorials/blob/master/advanced_source/ddp_pipeline.py) on the Pytorch github instead.
 
