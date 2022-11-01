@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -8,7 +9,7 @@ from torch.utils.data import DataLoader
 
 
 
-def create_data_loader(batch_size = 32, num_workers = 4, path_folder = 'images'):
+def create_data_loader(batch_size = 32, num_workers = 4):
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(224),
         transforms.ToTensor(),
@@ -17,9 +18,8 @@ def create_data_loader(batch_size = 32, num_workers = 4, path_folder = 'images')
         transforms.RandomResizedCrop(224),
         transforms.ToTensor()
     ])
-
-    train_set = ImageFolder(path_folder + '/train', transform = train_transform)
-    val_set   = ImageFolder(path_folder + '/val', transform = val_transform)
+    train_set = ImageFolder("../data/images/train", transform = train_transform)
+    val_set   = ImageFolder("../data/images/val", transform = val_transform)
 
 
     train_loader = DataLoader(
@@ -39,6 +39,7 @@ def create_data_loader(batch_size = 32, num_workers = 4, path_folder = 'images')
 
 
 def train(model, train_loader, val_loader, epochs = 1, plot = True):
+    print("Start Training...")
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.SGD(vgg19.parameters(), lr = 0.003, momentum=0.9, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
@@ -83,7 +84,8 @@ def train(model, train_loader, val_loader, epochs = 1, plot = True):
                 f"Validation accuracy: {accuracy/len(val_loader):.3f}")
         running_loss = 0
         vgg19.train()
-    torch.save(vgg19, 'vgg19.pth')
+    torch.save(vgg19, '../../models/vgg19.pth')
+    print("Finished Training")
     if plot:
         plt.plot(train_losses, label='Training loss')
         plt.plot(val_losses, label='Validation loss')
@@ -98,7 +100,7 @@ if __name__ == "__main__":
     vgg19.to(device)
 
     ##DATASET
-    train_loader, val_loader = create_data_loader(batch_size = 8, num_workers = 4, path_folder = "images")
+    train_loader, val_loader = create_data_loader(batch_size = 4, num_workers = 2)
 
     ##TRAINING
     train(vgg19, train_loader, val_loader)
