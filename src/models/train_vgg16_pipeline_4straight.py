@@ -39,6 +39,7 @@ def create_data_loader(batch_size = 32, num_workers = 4):
         dataset=train_set,
         batch_size = batch_size,
         num_workers= num_workers,
+        pin_memory=True,
         shuffle=True,
     )
 
@@ -46,6 +47,7 @@ def create_data_loader(batch_size = 32, num_workers = 4):
         dataset=val_set,
         batch_size = batch_size,
         num_workers = num_workers,
+        pin_memory=True,
         shuffle=True,
     )
     return train_loader, val_loader
@@ -64,7 +66,7 @@ def train(model, train_loader, val_loader, epochs = 1, plot = True):
         epoch_start_time = time.time()
         batch_start_time = time.time()
         for batch_idx, data in enumerate(train_loader):
-            inputs, labels = data[0].to(device), data[1].to(device)
+            inputs, labels = data[0].to(device), data[1].to(torch.device(device,3))
             #inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
@@ -73,14 +75,11 @@ def train(model, train_loader, val_loader, epochs = 1, plot = True):
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
-            loss = criterion(logps, labels.to(torch.device(device,3)))
+            loss = criterion(logps, labels)
             loss.backward()
             optimizer.step()
             #print('loss.item',loss.item())
             running_loss += loss.item()
-            # inputs.detach()
-            # labels.detach()
-            # logps.detach()
             log_interval = 10
             if batch_idx % log_interval == 0 and batch_idx > 0:
                 #print('running_loss', running_loss)
@@ -95,6 +94,10 @@ def train(model, train_loader, val_loader, epochs = 1, plot = True):
                         cur_loss, np.exp(cur_loss)))
                 running_loss = 0
                 batch_start_time = time.time()
+            # inputs.detach()
+            # labels.detach()
+            # logps.detach()
+    
 
 
         val_loss = 0
@@ -102,15 +105,16 @@ def train(model, train_loader, val_loader, epochs = 1, plot = True):
         model.eval()
         with torch.no_grad():
             for inputs, labels in val_loader:
-                inputs, labels = inputs.to(device), labels.to(device)
+                inputs = inputs.to(torch.device(device,0))
+                labels = labels.to(torch.device(device,3))
                 logps = model(inputs).local_value()
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
-                batch_loss = criterion(logps, labels.to(torch.device(device,3))) # need to change this depending on num_gpus
+                batch_loss = criterion(logps, labels) # need to change this depending on num_gpus
                 val_loss += batch_loss.item()
                 ps = torch.exp(logps)
                 top_p, top_class = ps.topk(1, dim=1)
-                equals = top_class == labels.view(*top_class.shape)
+                equals = top_class.to(labels.device) == labels.view(*top_class.shape)
                 accuracy += torch.mean(equals.type(torch.FloatTensor)).item()
                 # inputs.detach()
                 # labels.detach()
@@ -123,7 +127,7 @@ def train(model, train_loader, val_loader, epochs = 1, plot = True):
                 f"Validation accuracy: {accuracy/len(val_loader):.3f}   ",
                 f"Epoch time (s): {(time.time() - epoch_start_time):.3f}")
         running_loss = 0
-        scheduler.step()
+        #scheduler.step()
     
     print("Finished Training")
     if plot:
@@ -147,7 +151,7 @@ def get_total_params(module: torch.nn.Module):
 if __name__ == "__main__":
 
     ##DATASET
-    train_loader, val_loader = create_data_loader(batch_size = 4, num_workers = 2)
+    train_loader, val_loader = create_data_loader(batch_size = 4, num_workers = 0)
     tmpfile = tempfile.NamedTemporaryFile()
     torch.distributed.rpc.init_rpc('worker', rank=0, world_size=1,rpc_backend_options=torch.distributed.rpc.TensorPipeRpcBackendOptions(
         init_method="file://{}".format(tmpfile.name)))
@@ -158,8 +162,6 @@ if __name__ == "__main__":
     else:
         device = "cpu"
         print(f"DEVICE TYPE: {device}")
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     
 
     # create stages of the model
@@ -167,16 +169,16 @@ if __name__ == "__main__":
     arch = module.arch()
     stages = module.model()
     for i, stage in enumerate(stages.values()):
-        stage.to(torch.device(device, i))
+        stage = stage.to(torch.device(device, i))
     
-    model = nn.Sequential(module.model())
+    model = nn.Sequential(stages)
     model = Pipe(model, chunks=8)
 
     print ('Total parameters in model: {:,}'.format(get_total_params(model)))
     for i, stage in enumerate(model):
         print ('Total parameters in stage {}: {:,}'.format(i, get_total_params(stage)))
     
-    criterion = nn.CrossEntropyLoss().to(device)
+    criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr = 0.01, momentum=0.9, weight_decay=0.0005)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
    
