@@ -23,7 +23,7 @@ def setup(rank, world_size):
 def cleanup():
     dist.destroy_process_group()
 
-def create_data_loader(rank, world_size, batch_size = 32, num_workers = 0):
+def create_data_loader(rank, world_size, batch_size):
     print(f"Create data loader device {rank}")
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(224),
@@ -33,36 +33,41 @@ def create_data_loader(rank, world_size, batch_size = 32, num_workers = 0):
         transforms.RandomResizedCrop(224),
         transforms.ToTensor()
     ])
-    train_set = ImageFolder("../data/ImageNet/train", transform = train_transform)
-    val_set   = ImageFolder("../data/ImageNet/val", transform = val_transform)
+    
+    if batch_size % world_size != 0:
+        raise Exception("Batch size must be a multiple of the number of workers")
 
-    train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
-    val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
+    batch_size = batch_size // world_size
+    train_set = ImageFolder("../data/images/train", transform = train_transform)
+    val_set   = ImageFolder("../data/images/val", transform = val_transform)
+
+    train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)
+    val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)
 
     train_loader = DataLoader(
         dataset=train_set,
         batch_size = batch_size,
-        num_workers= num_workers,
+        num_workers=world_size,
 	sampler=train_sampler,
-)
+    )
 
     val_loader = DataLoader(
         dataset=val_set,
         batch_size = batch_size,
-        num_workers = num_workers,
+        num_workers = world_size,
 	sampler=val_sampler,
     )
     return train_loader, val_loader
 
 
-def train(rank, world_size, epochs = 3):
+def train(rank, world_size, epochs = 10, batch_size = 32):
     setup(rank, world_size)
 
     vgg19 = models.vgg19(weights = None)
     vgg19.to(rank)
     vgg19 = DDP(vgg19, device_ids=[rank], output_device=rank)
 
-    train_loader, val_loader = create_data_loader(rank, world_size)
+    train_loader, val_loader = create_data_loader(rank, world_size, batch_size)
 
     criterion = nn.CrossEntropyLoss().to(rank)
     optimizer = optim.SGD(vgg19.parameters(), lr = 0.003, momentum=0.9, weight_decay=1e-4)
@@ -125,7 +130,7 @@ def train(rank, world_size, epochs = 3):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    n = min(torch.cuda.device_count(), 4)
+    n = min(torch.cuda.device_count(), 2)
     print(f'Using device {device} with device count : {n}')
     world_size = n
     mp.spawn(
