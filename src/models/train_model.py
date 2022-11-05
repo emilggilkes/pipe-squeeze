@@ -9,6 +9,8 @@ from torchvision.datasets import ImageFolder, ImageNet
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
+from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compress_hook, bf16_compress_hook
+
 import torch.multiprocessing as mp
 
 
@@ -60,12 +62,13 @@ def create_data_loader(rank, world_size, batch_size):
     return train_loader, val_loader
 
 
-def train(rank, world_size, epochs = 10, batch_size = 32):
+def train(rank, world_size, epochs = 2, batch_size = 1024):
     setup(rank, world_size)
 
     vgg19 = models.vgg19(weights = None)
     vgg19.to(rank)
     vgg19 = DDP(vgg19, device_ids=[rank], output_device=rank)
+    #vgg19.register_comm_hook(state=None, hook=bf16_compress_hook)
 
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size)
 
@@ -77,19 +80,27 @@ def train(rank, world_size, epochs = 10, batch_size = 32):
     running_loss = 0
     train_losses, val_losses = [], []
     for epoch in range(epochs):
-        train_loader.sampler.set_epoch(epoch)
-        for inputs, labels in train_loader:
-            inputs, labels = inputs.to(rank), labels.to(rank)
-            optimizer.zero_grad()
-            logps = vgg19.forward(inputs)
-            loss = criterion(logps, labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-            inputs.detach()
-            labels.detach()
-            logps.detach()
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+        ) as p:
+            train_loader.sampler.set_epoch(epoch)
+            for inputs, labels in train_loader:
+                inputs, labels = inputs.to(rank), labels.to(rank)
+                optimizer.zero_grad()
+                logps = vgg19.forward(inputs)
+                loss = criterion(logps, labels)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+                inputs.detach()
+                labels.detach()
+                logps.detach()
 
+        print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
+        p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
         val_loss = 0
         accuracy = 0
         vgg19.eval()
@@ -130,13 +141,21 @@ def train(rank, world_size, epochs = 10, batch_size = 32):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    n = min(torch.cuda.device_count(), 2)
+    n = min(torch.cuda.device_count(), 8)
     print(f'Using device {device} with device count : {n}')
     world_size = n
-    mp.spawn(
-        train,
-        args=(world_size,),
-        nprocs=world_size
-    )
-
+    with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+    ) as p:
+        mp.spawn(
+            train,
+            args=(world_size,),
+            nprocs=world_size,
+            join=True,
+        )
+    print(p.key_averages().table(
+        sort_by="self_cuda_time_total", row_limit=-1))
 #https://github.com/pytorch/examples/blob/main/imagenet/main.py
