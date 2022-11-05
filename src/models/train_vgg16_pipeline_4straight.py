@@ -77,6 +77,7 @@ def train(model, train_loader, val_loader, epochs = 1, plot = True):
             # pipeline resides.
             loss = criterion(logps, labels)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
             #print('loss.item',loss.item())
             running_loss += loss.item()
