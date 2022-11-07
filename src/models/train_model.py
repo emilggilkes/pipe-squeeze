@@ -200,28 +200,21 @@ if __name__ == "__main__":
     data_dir_path = DATA_DIR_MAP[args.data_set]
 
     print(f'Using device {device} with device count : {world_size}')
-    with torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ]
-    ) as p:
-        mp.spawn(
-            main,
-            args=(
-                world_size,
-                args.epochs,
-                args.batch_size,
-                args.learning_rate,
-                args.compression_type,
-                args.save_on_finish,
-                args.use_pipeline_parallel,
-                data_dir_path,
-            ),
-            nprocs=world_size,
-            join=True,
-        )
-    print(p.key_averages().table(
-        sort_by="self_cuda_time_total", row_limit=-1))
+    print(f'Training params:\nEpochs: {args.epochs}\nBatch Size: {args.batch_size}\nLearning Rate: {args.learning_rate}')
+    print(f'Compression Type: {args.compression_type}\nPipelining: {args.use_pipeline_parallel}\nData dir path: {data_set_dirpath}')
 
-#https://github.com/pytorch/examples/blob/main/imagenet/main.py
+    mp.spawn(
+        main,
+        args=(
+            world_size,
+            args.epochs,
+            args.batch_size,
+            args.learning_rate,
+            args.compression_type,
+            args.save_on_finish,
+            args.use_pipeline_parallel,
+            data_dir_path,
+        ),
+        nprocs=world_size,
+        join=True,
+    )
