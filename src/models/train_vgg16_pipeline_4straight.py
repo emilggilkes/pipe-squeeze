@@ -77,7 +77,7 @@ def train(model, train_loader, val_loader, epochs = 1, plot = True):
             # pipeline resides.
             loss = criterion(logps, labels)
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+            #nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
             #print('loss.item',loss.item())
             running_loss += loss.item()
@@ -180,7 +180,7 @@ if __name__ == "__main__":
         print ('Total parameters in stage {}: {:,}'.format(i, get_total_params(stage)))
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr = 0.01, momentum=0.9, weight_decay=0.0005)
+    optimizer = optim.SGD(model.parameters(), lr = 0.003, momentum=0.9, weight_decay=0.0001)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
    
     ##TRAINING
