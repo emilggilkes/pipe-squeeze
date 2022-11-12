@@ -201,7 +201,7 @@ if __name__ == "__main__":
 
     print(f'Using device {device} with device count : {world_size}')
     print(f'Training params:\nEpochs: {args.epochs}\nBatch Size: {args.batch_size}\nLearning Rate: {args.learning_rate}')
-    print(f'Compression Type: {args.compression_type}\nPipelining: {args.use_pipeline_parallel}\nData dir path: {data_set_dirpath}')
+    print(f'Compression Type: {args.compression_type}\nPipelining: {args.use_pipeline_parallel}\nData dir path: {data_dir_path}')
 
     mp.spawn(
         main,
