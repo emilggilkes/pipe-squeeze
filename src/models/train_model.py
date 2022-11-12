@@ -14,9 +14,9 @@ from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compr
 import torch.multiprocessing as mp
 
 from timer import Timer
-from fp16 import fp16_compress_hook_timed
+from fp16 import FP16Compressor
 
-timer = Timer()
+timer = Timer(skip_first=False)
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -65,16 +65,15 @@ def create_data_loader(rank, world_size, batch_size):
     return train_loader, val_loader
 
 
-def train(rank, world_size, epochs = 2, batch_size = 1024):
+def train(rank, world_size, epochs = 1, batch_size = 128):
     setup(rank, world_size)
 
     vgg19 = models.vgg19(weights = None)
     vgg19.to(rank)
     vgg19 = DDP(vgg19, device_ids=[rank], output_device=rank)
 
-    from functools import partial
-    fp16_compress_hook_timed_f = partial(fp16_compress_hook_timed, timer=timer)
-    vgg19.register_comm_hook(state=None, hook=fp16_compress_hook_timed_f)
+    #fp16_compressor = FP16Compressor(timer)
+    #vgg19.register_comm_hook(state=None, hook=fp16_compress_hook)
 
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size)
 
@@ -93,20 +92,31 @@ def train(rank, world_size, epochs = 2, batch_size = 1024):
             ]
         ) as p:
             train_loader.sampler.set_epoch(epoch)
+            start_time = torch.cuda.Event(enable_timing=True)
+            stop_time = torch.cuda.Event(enable_timing=True)
+            time_list = list()
             for inputs, labels in train_loader:
                 inputs, labels = inputs.to(rank), labels.to(rank)
                 optimizer.zero_grad()
                 logps = vgg19.forward(inputs)
                 loss = criterion(logps, labels)
+                torch.cuda.synchronize()
+                start_time.record()
                 loss.backward()
+                stop_time.record()
+                torch.cuda.synchronize()
+                time_list.append(start_time.elapsed_time(stop_time))
                 optimizer.step()
                 running_loss += loss.item()
                 inputs.detach()
                 labels.detach()
                 logps.detach()
-
-        print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
-        p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
+        
+        time_list_string = '\n'.join(map(str, time_list))
+        print(f'Epoch: {epoch}, Rank: {rank}')
+        print(f'Time list: {time_list_string}')
+        #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
+        #p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
         val_loss = 0
         accuracy = 0
         vgg19.eval()
@@ -162,7 +172,6 @@ if __name__ == "__main__":
             nprocs=world_size,
             join=True,
         )
-    print(p.key_averages().table(
-        sort_by="self_cuda_time_total", row_limit=-1))
+    #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=-1))
 
 #https://github.com/pytorch/examples/blob/main/imagenet/main.py
