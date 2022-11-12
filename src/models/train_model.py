@@ -13,7 +13,10 @@ from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compr
 
 import torch.multiprocessing as mp
 
+from timer import Timer
+from compression_hooks.fp16 import fp16_compress_hook_timed
 
+timer = Timer()
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -68,13 +71,16 @@ def train(rank, world_size, epochs = 2, batch_size = 1024):
     vgg19 = models.vgg19(weights = None)
     vgg19.to(rank)
     vgg19 = DDP(vgg19, device_ids=[rank], output_device=rank)
-    #vgg19.register_comm_hook(state=None, hook=bf16_compress_hook)
+
+    from functools import partial
+    fp16_compress_hook_timed_f = partial(fp16_compress_hook_timed, timer=timer)
+    vgg19.register_comm_hook(state=None, hook=fp16_compress_hook_timed_f)
 
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size)
 
     criterion = nn.CrossEntropyLoss().to(rank)
     optimizer = optim.SGD(vgg19.parameters(), lr = 0.003, momentum=0.9, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 
     print(f"Start Training device {rank}")
     running_loss = 0
@@ -99,7 +105,7 @@ def train(rank, world_size, epochs = 2, batch_size = 1024):
                 labels.detach()
                 logps.detach()
 
-        print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
+        print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
         p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
         val_loss = 0
         accuracy = 0
@@ -158,4 +164,5 @@ if __name__ == "__main__":
         )
     print(p.key_averages().table(
         sort_by="self_cuda_time_total", row_limit=-1))
+
 #https://github.com/pytorch/examples/blob/main/imagenet/main.py
