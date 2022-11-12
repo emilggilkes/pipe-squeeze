@@ -14,7 +14,7 @@ from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compr
 import torch.multiprocessing as mp
 
 from timer import Timer
-from compression_hooks.fp16 import fp16_compress_hook_timed
+from fp16 import fp16_compress_hook_timed
 
 timer = Timer()
 
