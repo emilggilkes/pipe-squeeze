@@ -127,7 +127,7 @@ class Timer:
             torch.cuda.synchronize()
 
     def _default_log_fn(self, _, values, tags):
-        label = tags["label"]
+        label = tags["event"]
         epoch = values["epoch"]
         duration = values["value"]
         print(f"Timer: {label:30s} @ {epoch:4.1f} - {duration:8.5f}s")
