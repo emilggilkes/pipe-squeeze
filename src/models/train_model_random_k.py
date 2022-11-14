@@ -140,6 +140,9 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             send_bfr.data[:] = grad + memory
         reducer.reduce(send_buffers, grad_list, memories)
 
+        for i, p in enumerate(model.parameters()):
+            p.data = send_bfr.data[:]
+
         stop_time.record()
         torch.cuda.synchronize()
         
