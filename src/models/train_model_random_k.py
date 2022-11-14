@@ -15,7 +15,7 @@ from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compr
 
 import torch.multiprocessing as mp
 
-from random_k_compressor import RandomKReducer
+from random_k_reducer import RandomKReducer
 from timer import Timer
 
 timer = Timer(skip_first=False)
@@ -120,14 +120,14 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     start_time = torch.cuda.Event(enable_timing=True)
     stop_time = torch.cuda.Event(enable_timing=True)
     time_list = list()
-    reducer = RandomKReducer(42, timer, 0.3)
+    reducer = RandomKReducer(42, timer, 1.0)
 
     memories = [torch.zeros_like(p) for p in model.parameters()]
     send_buffers = [torch.zeros_like(p) for p in model.parameters()]
 
     for inputs, labels in train_loader:
         inputs, labels = inputs.to(rank), labels.to(rank)
-        optimizer.zero_grad()
+        #optimizer.zero_grad()
         logps = model.forward(inputs)
         loss = criterion(logps, labels)
         torch.cuda.synchronize()
@@ -141,13 +141,15 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
 
         stop_time.record()
         torch.cuda.synchronize()
+        
+        #optimizer.step()
 
         time_list.append(start_time.elapsed_time(stop_time))
         
         data_dict = dict()
         data_dict['timing_log'] = time_list
         file_name = f"test_random_k_training_{rank}_{epoch}.json"
-        with open(file_name, "w") as fout:
+        with open(file_name, "w+") as fout:
             json.dump(data_dict, fout)
 
         train_loss += loss.item()
@@ -197,7 +199,7 @@ def main(
             train_loss = train(vgg19, train_loader, optimizer, criterion, rank, epoch, timer)
 
         print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
-        p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
+        #p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
         train_losses.append(train_loss/len(train_loader))
         
         avg_val_loss, val_accuracy = val(vgg19, val_loader, criterion, rank, epoch)
@@ -249,3 +251,4 @@ if __name__ == "__main__":
         nprocs=world_size,
         join=True,
     )
+    print(timer.summary())

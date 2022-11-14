@@ -128,12 +128,12 @@ class RandomKReducer(Reducer):
                 mem.data[:] = tensor
                 mem.view(-1)[indices] = 0.0
 
-        with self.timer("reduce.reduce", verbosity=2):
+        with self.timer("reduce.reduce", verbosity=1):
             flat_values.all_reduce()
             flat_values.buffer.data /= self.n_workers
             bits_communicated += flat_values.bits()
 
-        with self.timer("reduce.combine", verbosity=2):
+        with self.timer("reduce.combine", verbosity=1):
             for tensor, out, values, indices in zip(grad_in, grad_out, flat_values, indices_list):
                 out.data.zero_()
                 out.view(-1)[indices] = values

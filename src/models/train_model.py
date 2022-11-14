@@ -184,7 +184,7 @@ def main(
         ) as p:
             train_loss = train(vgg19, train_loader, optimizer, criterion, rank, epoch)
 
-        #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
+        print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
         #p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
         train_losses.append(train_loss/len(train_loader))
         
