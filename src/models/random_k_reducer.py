@@ -95,10 +95,11 @@ class Reducer:
 class RandomKReducer(Reducer):
     """Python libraries Based Compress by performing sparsification (i.e., sending a ratio of the actual tensor size."""
 
-    def __init__(self, random_seed, timer, compress_ratio):
+    def __init__(self, random_seed, timer, compress_ratio, rank):
         super().__init__(random_seed, timer)
         self.global_step = 0
         self.compress_ratio = compress_ratio
+        self.rank = rank
 
     def reduce(self, grad_in, grad_out, memory_out):
         """
@@ -109,21 +110,23 @@ class RandomKReducer(Reducer):
         """
         bits_communicated = 0
 
-        indices_list = []
         values_list = []
+        indices_list = []
 
-        with self.timer("reduce.block", verbosity=2):
-            for tensor in grad_in:
+        with self.timer("reduce.block", verbosity=1):
+            for i, tensor in enumerate(grad_in):
                 block_size = max(1, int(self.compress_ratio * tensor.nelement()))
                 indices = self.rng.choice(tensor.nelement(), block_size, replace=False)
                 indices_list.append(indices)
                 values = tensor.view(-1)[indices]
                 values_list.append(values)
 
-        with self.timer("reduce.flatpack", verbosity=2):
+        #print(f'Rank: {self.rank}. Indices: {sorted(indices)}')
+
+        with self.timer("reduce.flatpack", verbosity=1):
             flat_values = TensorBuffer(values_list)
 
-        with self.timer("reduce.memory", verbosity=2):
+        with self.timer("reduce.memory", verbosity=1):
             for tensor, mem, indices in zip(grad_in, memory_out, indices_list):
                 mem.data[:] = tensor
                 mem.view(-1)[indices] = 0.0

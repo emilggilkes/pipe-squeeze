@@ -121,14 +121,14 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     start_time = torch.cuda.Event(enable_timing=True)
     stop_time = torch.cuda.Event(enable_timing=True)
     time_list = list()
-    reducer = RandomKReducer(42, timer, 1.0)
+    reducer = RandomKReducer(42, timer, 0.01, rank)
 
     memories = [torch.zeros_like(p) for p in model.parameters()]
     send_buffers = [torch.zeros_like(p) for p in model.parameters()]
 
     for inputs, labels in train_loader:
         inputs, labels = inputs.to(rank), labels.to(rank)
-        #optimizer.zero_grad()
+        optimizer.zero_grad()
         logps = model.forward(inputs)
         loss = criterion(logps, labels)
         torch.cuda.synchronize()
@@ -140,13 +140,13 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             send_bfr.data[:] = grad + memory
         reducer.reduce(send_buffers, grad_list, memories)
 
-        for i, p in enumerate(model.parameters()):
-            p.data = send_bfr.data[:]
+        #for i, p in enumerate(model.parameters()):
+            #p.data = grad_list[i].data[:]
 
         stop_time.record()
         torch.cuda.synchronize()
         
-        #optimizer.step()
+        optimizer.step()
 
         time_list.append(start_time.elapsed_time(stop_time))
         
