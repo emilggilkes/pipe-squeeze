@@ -16,7 +16,9 @@ from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compr
 import torch.multiprocessing as mp
 
 from random_k_compressor import RandomKReducer
+from timer import Timer
 
+timer = Timer(skip_first=False)
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
 IMAGENET_DATA_SET_PATH_PREFIX='../data/ImageNet'
@@ -192,7 +194,7 @@ def main(
                 torch.profiler.ProfilerActivity.CUDA,
             ]
         ) as p:
-            train_loss = train(vgg19, train_loader, optimizer, criterion, rank, epoch)
+            train_loss = train(vgg19, train_loader, optimizer, criterion, rank, epoch, timer)
 
         print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
         p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
