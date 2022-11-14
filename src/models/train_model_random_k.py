@@ -107,7 +107,7 @@ def val(model, val_loader, criterion, rank, epoch):
             inputs.detach()
             labels.detach()
             logps.detach()
-    model.train()
+   # model.train()
 
     avg_val_loss = val_loss/len(val_loader)
     val_accuracy = accuracy/len(val_loader)
@@ -115,6 +115,7 @@ def val(model, val_loader, criterion, rank, epoch):
 
 
 def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
+    model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
     start_time = torch.cuda.Event(enable_timing=True)
