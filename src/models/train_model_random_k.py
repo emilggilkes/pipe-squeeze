@@ -1,6 +1,7 @@
 import os
 import argparse
 import numpy as np
+import json
 import matplotlib.pyplot as plt
 import torch
 import torch.distributed as dist
@@ -14,8 +15,8 @@ from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compr
 
 import torch.multiprocessing as mp
 
+from random_k_reducer import RandomKReducer
 from timer import Timer
-from fp16 import FP16Compressor
 
 timer = Timer(skip_first=False)
 
@@ -39,6 +40,7 @@ def setup_argparser():
     parser.add_argument('--save-on-finish', help='Saves model weights upon training completion', type=bool, default=False)
     parser.add_argument('--epochs', help='Number of epochs to train for', type=int, default=2)
     return parser
+
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -105,19 +107,25 @@ def val(model, val_loader, criterion, rank, epoch):
             inputs.detach()
             labels.detach()
             logps.detach()
-    model.train()
+   # model.train()
 
     avg_val_loss = val_loss/len(val_loader)
     val_accuracy = accuracy/len(val_loader)
     return avg_val_loss, val_accuracy
 
 
-def train(model, train_loader, optimizer, criterion, rank, epoch):
+def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
+    model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
     start_time = torch.cuda.Event(enable_timing=True)
     stop_time = torch.cuda.Event(enable_timing=True)
     time_list = list()
+    reducer = RandomKReducer(42, timer, 0.01, rank)
+
+    memories = [torch.zeros_like(p) for p in model.parameters()]
+    send_buffers = [torch.zeros_like(p) for p in model.parameters()]
+
     for inputs, labels in train_loader:
         inputs, labels = inputs.to(rank), labels.to(rank)
         optimizer.zero_grad()
@@ -126,18 +134,32 @@ def train(model, train_loader, optimizer, criterion, rank, epoch):
         torch.cuda.synchronize()
         start_time.record()
         loss.backward()
+        grad_list = [parameter.grad for parameter in model.parameters()]
+
+        for grad, memory, send_bfr in zip(grad_list, memories, send_buffers):
+            send_bfr.data[:] = grad + memory
+        reducer.reduce(send_buffers, grad_list, memories)
+
+        #for i, p in enumerate(model.parameters()):
+            #p.data = grad_list[i].data[:]
+
         stop_time.record()
         torch.cuda.synchronize()
+        
         optimizer.step()
+
+        time_list.append(start_time.elapsed_time(stop_time))
+        
+        data_dict = dict()
+        data_dict['timing_log'] = time_list
+        file_name = f"test_random_k_training_{rank}_{epoch}.json"
+        with open(file_name, "w+") as fout:
+            json.dump(data_dict, fout)
+
         train_loss += loss.item()
         inputs.detach()
         labels.detach()
         logps.detach()
-    
-    time_list_string = '\n'.join(map(str, time_list))
-    print(f'Epoch: {epoch}, Rank: {rank}')
-    print(f'Time list: {time_list_string}')
-    
     return train_loss
 
 
@@ -157,10 +179,6 @@ def main(
     vgg19 = models.vgg19(weights = None)
     vgg19.to(rank)
     vgg19 = DDP(vgg19, device_ids=[rank], output_device=rank)
-
-    #fp16_compressor = FP16Compressor(timer)
-    #vgg19.register_comm_hook(state=None, hook=fp16_compress_hook)
-
 
     if compression_type == 'fp16':
         vgg19.register_comm_hook(state=None, hook=fp16_compress_hook)
@@ -182,7 +200,7 @@ def main(
                 torch.profiler.ProfilerActivity.CUDA,
             ]
         ) as p:
-            train_loss = train(vgg19, train_loader, optimizer, criterion, rank, epoch)
+            train_loss = train(vgg19, train_loader, optimizer, criterion, rank, epoch, timer)
 
         print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
         #p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
@@ -237,3 +255,4 @@ if __name__ == "__main__":
         nprocs=world_size,
         join=True,
     )
+    print(timer.summary())
