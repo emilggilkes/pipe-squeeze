@@ -154,23 +154,23 @@ def main(
 ):
     setup(rank, world_size)
 
-    vgg19 = models.vgg19(weights = None)
-    vgg19.to(rank)
-    vgg19 = DDP(vgg19, device_ids=[rank], output_device=rank)
+    vgg16 = models.vgg16(weights = None)
+    vgg16.to(rank)
+    vgg16 = DDP(vgg16, device_ids=[rank], output_device=rank)
 
     #fp16_compressor = FP16Compressor(timer)
-    #vgg19.register_comm_hook(state=None, hook=fp16_compress_hook)
+    #vgg16.register_comm_hook(state=None, hook=fp16_compress_hook)
 
 
     if compression_type == 'fp16':
-        vgg19.register_comm_hook(state=None, hook=fp16_compress_hook)
+        vgg16.register_comm_hook(state=None, hook=fp16_compress_hook)
     elif compression_type == 'bf16':
-        vgg19.register_comm_hook(state=None, hook=bf16_compress_hook)
+        vgg16.register_comm_hook(state=None, hook=bf16_compress_hook)
 
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
 
     criterion = nn.CrossEntropyLoss().to(rank)
-    optimizer = optim.SGD(vgg19.parameters(), lr = learning_rate, momentum=0.9, weight_decay=1e-4)
+    optimizer = optim.SGD(vgg16.parameters(), lr = learning_rate, momentum=0.9, weight_decay=1e-4)
     # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 
     print(f"Start Training device {rank}")
@@ -182,13 +182,13 @@ def main(
                 torch.profiler.ProfilerActivity.CUDA,
             ]
         ) as p:
-            train_loss = train(vgg19, train_loader, optimizer, criterion, rank, epoch)
+            train_loss = train(vgg16, train_loader, optimizer, criterion, rank, epoch)
 
         print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
         #p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
         train_losses.append(train_loss/len(train_loader))
         
-        avg_val_loss, val_accuracy = val(vgg19, val_loader, criterion, rank, epoch)
+        avg_val_loss, val_accuracy = val(vgg16, val_loader, criterion, rank, epoch)
         val_losses.append(avg_val_loss)
 
         print(f"Epoch {epoch+1}/{epochs}   "
@@ -200,7 +200,7 @@ def main(
     cleanup()
     
     if save_on_finish:
-        torch.save(vgg19.state_dict(), f'../../models/vgg19_{rank}.pth')
+        torch.save(vgg16.state_dict(), f'../../models/vgg16_{rank}.pth')
     
     print(f"Finished Training device {rank}")
     if False:
