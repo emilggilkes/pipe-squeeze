@@ -71,6 +71,10 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
+            print("In train loop")
+            print(f"logps device: {logps.device}")
+            print(f"Rank: {rank}")
+            print(f"Labels device: {labels.device}")
             loss = criterion(logps, labels.to(torch.device(device, rank)))
             loss.backward()
             #nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -105,7 +109,11 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
                 logps = model(inputs).local_value()
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
-                logps = logps.to(labels.device)
+                print("In train loop")
+                print(f"logps device: {logps.device}")
+                print(f"Rank: {rank}")
+                print(f"Labels device: {labels.device}")
+                # logps = logps.to(labels.device)
                 batch_loss = criterion(logps, labels.to(torch.device(device, rank))) # need to change this depending on num_gpus
                 val_loss += batch_loss.item()
                 ps = torch.exp(logps)
