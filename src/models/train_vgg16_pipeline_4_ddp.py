@@ -165,6 +165,7 @@ def main(
     # data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
     setup(rank, world_size)
+    device = "cuda"
 
     ##DATASET
     train_loader, val_loader = create_data_loader(batch_size = 4, num_workers = 0)
