@@ -188,6 +188,8 @@ def main(
     criterion = nn.CrossEntropyLoss()
     module = importlib.import_module("vgg16.gpus=4")
     # arch = module.arch()
+
+    #NOT SURE IF THIS WORKS TO GROUP SPECIFIC GPUS TO A STAGE
     stages = module.model(criterion)
     stage = stages["stage0"].to(torch.device(device, 0))
     stage = stages["stage0"].to(torch.device(device, 1))
