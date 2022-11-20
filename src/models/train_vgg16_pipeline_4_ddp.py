@@ -50,7 +50,7 @@ def create_data_loader(batch_size = 32, num_workers = 4):
     return train_loader, val_loader
 
 
-def train(model, train_loader, val_loader, optimizer, criterion, scheduler, epochs = 1, plot = True):
+def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank, epochs = 1, plot=False):
     print("Start Training...")
 
     running_loss = 0
@@ -71,7 +71,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, epoc
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
-            loss = criterion(logps, labels.to(torch.device(device, 0)))
+            loss = criterion(logps, labels.to(torch.device(device, 2 * rank + 1)))
             loss.backward()
             #nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
@@ -106,7 +106,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, epoc
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
                 logps = logps.to(labels.device)
-                batch_loss = criterion(logps, labels.to(torch.device(device, 0))) # need to change this depending on num_gpus
+                batch_loss = criterion(logps, labels.to(torch.device(device, 2 * rank + 1))) # need to change this depending on num_gpus
                 val_loss += batch_loss.item()
                 ps = torch.exp(logps)
                 top_p, top_class = ps.topk(1, dim=1)
@@ -181,9 +181,11 @@ def main(
     module = importlib.import_module("vgg16.gpus=4")
     # arch = module.arch()
     stages = module.model(criterion)
-    for i, stage in enumerate(stages.values()):
-        stage = stage.to(torch.device(device, (i) % 2))
-        stage = stage.to(torch.device(device, (i+1) % 2))
+    stage = stages[0].to(torch.device(device, 0))
+    stage = stages[0].to(torch.device(device, 1))
+    
+    stage = stages[1].to(torch.device(device, 2))
+    stage = stages[1].to(torch.device(device, 3))
     
     model = nn.Sequential(stages)
     model = Pipe(model, chunks=8)
