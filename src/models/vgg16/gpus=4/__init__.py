@@ -4,6 +4,7 @@
 from .stage0 import Stage0
 from .stage1 import Stage1
 from .vgg16 import VGG16Partitioned
+from collections import OrderedDict
 
 def arch():
     return "vgg16"
