@@ -173,9 +173,10 @@ def main(
         init_method="file://{}".format(tmpfile.name)))
 
     # create stages of the model
+    criterion = nn.CrossEntropyLoss()
     module = importlib.import_module("vgg16.gpus=4")
     # arch = module.arch()
-    stages = module.model()
+    stages = module.model(criterion)
     for i, stage in enumerate(stages.values()):
         stage = stage.to(torch.device(device, i % 2)) #: Will map 0 -> 0, 1->0, 2->1, 3->3
     
@@ -187,7 +188,6 @@ def main(
     for i, stage in enumerate(model):
         print ('Total parameters in stage {}: {:,}'.format(i, get_total_params(stage)))
     
-    criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr = 0.003, momentum=0.9, weight_decay=0.0001)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 
