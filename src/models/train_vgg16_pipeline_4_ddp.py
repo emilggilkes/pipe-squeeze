@@ -16,6 +16,8 @@ import torch.multiprocessing as mp
 from torch.distributed.pipeline.sync import Pipe
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+device='cuda'
+
 
 def create_data_loader(batch_size = 32, num_workers = 4):
     train_transform = transforms.Compose([
@@ -60,7 +62,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, epoc
         epoch_start_time = time.time()
         batch_start_time = time.time()
         for batch_idx, data in enumerate(train_loader):
-            inputs, labels = data[0].to(device), data[1].to(torch.device(device,3))
+            inputs, labels = data[0].to(torch.device(device,1)), data[1].to(torch.device(device, 3))
             #inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
@@ -69,7 +71,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, epoc
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
-            loss = criterion(logps, labels)
+            loss = criterion(logps, labels.to)
             loss.backward()
             #nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
@@ -98,11 +100,12 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, epoc
         model.eval()
         with torch.no_grad():
             for inputs, labels in val_loader:
-                inputs = inputs.to(torch.device(device,0))
-                labels = labels.to(torch.device(device,3))
+                inputs = inputs.to(torch.device(device, 1))
+                labels = labels.to(torch.device(device, 3))
                 logps = model(inputs).local_value()
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
+                logps = logps.to(labels.device)
                 batch_loss = criterion(logps, labels) # need to change this depending on num_gpus
                 val_loss += batch_loss.item()
                 ps = torch.exp(logps)
@@ -123,15 +126,15 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, epoc
         #scheduler.step()
     
     print("Finished Training")
-    if plot:
-        plt.plot(train_losses, label='Training loss')
-        plt.plot(val_losses, label='Validation loss')
-        plt.legend(frameon=False)
-        plt.savefig(f'plot loss - pipelining 4gpus straight full model {str(datetime.date.today())}.png')
-        plt.show()
-    torch.save(model.state_dict(), f'../../models/pipelining_4gpus_straight full model {str(datetime.date.today())}.pth')
-    for i, stage in enumerate(model):
-        torch.save(stage.state_dict(), f'../../models/pipelining_4gpus_straight stage{i} {str(datetime.date.today())}.pth')
+    #if plot:
+        #plt.plot(train_losses, label='Training loss')
+        #plt.plot(val_losses, label='Validation loss')
+        #plt.legend(frameon=False)
+        #plt.savefig(f'plot loss - pipelining 4gpus straight full model {str(datetime.date.today())}.png')
+        #plt.show()
+    #torch.save(model.state_dict(), f'../../models/pipelining_4gpus_straight full model {str(datetime.date.today())}.pth')
+    #for i, stage in enumerate(model):
+        #torch.save(stage.state_dict(), f'../../models/pipelining_4gpus_straight stage{i} {str(datetime.date.today())}.pth')
 
 
 def get_total_params(module: torch.nn.Module):
@@ -145,7 +148,7 @@ def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
 
-    dist.init_process_group(backend="nccl", rank = rank, world_size = world_size)
+    dist.init_process_group(backend="gloo", rank = rank, world_size = world_size)
     print(f"Initiated Process Group with rank = {rank} and world_size = {world_size}")
 
 
@@ -179,16 +182,17 @@ def main(
     # arch = module.arch()
     stages = module.model(criterion)
     for i, stage in enumerate(stages.values()):
-        stage = stage.to(torch.device(device, i % 2)) #: Will map 0 -> 0, 1->0, 2->1, 3->3
+        stage = stage.to(torch.device(device, (i) % 2))
+        stage = stage.to(torch.device(device, (i+1) % 2))
     
     model = nn.Sequential(stages)
     model = Pipe(model, chunks=8)
-    model = DDP(model, device_ids=[rank], output_device=rank)
 
     print ('Total parameters in model: {:,}'.format(get_total_params(model)))
     for i, stage in enumerate(model):
         print ('Total parameters in stage {}: {:,}'.format(i, get_total_params(stage)))
     
+    model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr = 0.003, momentum=0.9, weight_decay=0.0001)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 
