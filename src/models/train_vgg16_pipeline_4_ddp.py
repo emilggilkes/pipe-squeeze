@@ -181,11 +181,11 @@ def main(
     module = importlib.import_module("vgg16.gpus=4")
     # arch = module.arch()
     stages = module.model(criterion)
-    stage = stages[0].to(torch.device(device, 0))
-    stage = stages[0].to(torch.device(device, 1))
+    stage = stages["stage0"].to(torch.device(device, 0))
+    stage = stages["stage0"].to(torch.device(device, 1))
     
-    stage = stages[1].to(torch.device(device, 2))
-    stage = stages[1].to(torch.device(device, 3))
+    stage = stages["stage1"].to(torch.device(device, 2))
+    stage = stages["stage1"].to(torch.device(device, 3))
     
     model = nn.Sequential(stages)
     model = Pipe(model, chunks=8)
