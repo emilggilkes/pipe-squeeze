@@ -62,8 +62,9 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         epoch_start_time = time.time()
         batch_start_time = time.time()
         for batch_idx, data in enumerate(train_loader):
+            print("In train loop")
             print(f"inputs device, labels device, {data[0].device}, {data[1].device}")
-            inputs, labels = data[0].to(torch.device(device,1)), data[1].to(torch.device(device, 3))
+            inputs, labels = data[0].to(device), data[1].to(device)
             #inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
@@ -72,7 +73,6 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
-            print("In train loop")
             print(f"logps device: {logps.device}")
             print(f"Rank: {rank}")
             print(f"Labels device: {labels.device}")
@@ -105,8 +105,8 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         model.eval()
         with torch.no_grad():
             for inputs, labels in val_loader:
-                inputs = inputs.to(torch.device(device, 1))
-                labels = labels.to(torch.device(device, 3))
+                inputs = inputs.to(device)
+                labels = labels.to(device)
                 logps = model(inputs).local_value()
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
@@ -192,10 +192,10 @@ def main(
     #NOT SURE IF THIS WORKS TO GROUP SPECIFIC GPUS TO A STAGE
     stages = module.model(criterion)
     stage = stages["stage0"].to(torch.device(device, 0))
-    stage = stages["stage0"].to(torch.device(device, 1))
+    # stage = stages["stage0"].to(torch.device(device, 1))
     
     stage = stages["stage1"].to(torch.device(device, 2))
-    stage = stages["stage1"].to(torch.device(device, 3))
+    # stage = stages["stage1"].to(torch.device(device, 3))
     
     model = nn.Sequential(stages)
     model = Pipe(model, chunks=8)
