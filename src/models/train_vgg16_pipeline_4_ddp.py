@@ -198,7 +198,7 @@ def main(
     # stage = stages["stage1"].to(torch.device(device, 3))
     
     model = nn.Sequential(stages)
-    model = Pipe(model, chunks=8)
+    model = Pipe(model, chunks=8, checkpoint="never")
 
     print ('Total parameters in model: {:,}'.format(get_total_params(model)))
     for i, stage in enumerate(model):
