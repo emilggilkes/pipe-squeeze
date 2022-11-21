@@ -2,6 +2,7 @@ import os
 import argparse
 import numpy as np
 import json
+import tempfile
 import matplotlib.pyplot as plt
 import torch
 import torch.distributed as dist
@@ -10,6 +11,7 @@ from torchvision import datasets, transforms, models
 from torchvision.datasets import ImageFolder, ImageNet
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed.pipeline.sync import Pipe
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compress_hook, bf16_compress_hook
 
@@ -43,12 +45,17 @@ def setup_argparser():
     return parser
 
 
-def setup(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+def setup(rank, world_size, pipeline):
+    if pipeline:
+        tmpfile = tempfile.NamedTemporaryFile()
+        torch.distributed.rpc.init_rpc('worker', rank=0, world_size=1,rpc_backend_options=torch.distributed.rpc.TensorPipeRpcBackendOptions(
+        init_method="file://{}".format(tmpfile.name)))
+    else:
+        os.environ['MASTER_ADDR'] = 'localhost'
+        os.environ['MASTER_PORT'] = '12355'
 
-    dist.init_process_group(backend="nccl", rank = rank, world_size = world_size)
-    print(f"Initiated Process Group with rank = {rank} and world_size = {world_size}")
+        dist.init_process_group(backend="nccl", rank = rank, world_size = world_size)
+        print(f"Initiated Process Group with rank = {rank} and world_size = {world_size}")
 
 def cleanup():
     dist.destroy_process_group()
@@ -115,7 +122,46 @@ def val(model, val_loader, criterion, rank, epoch):
     return avg_val_loss, val_accuracy
 
 
-def train(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
+def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
+    model.train()
+    train_loss = 0
+    train_loader.sampler.set_epoch(epoch)
+    start_time = torch.cuda.Event(enable_timing=True)
+    stop_time = torch.cuda.Event(enable_timing=True)
+    time_list = list()
+    #reducer = RandomKReducer(42, timer, 0.01, rank)
+
+
+    for inputs, labels in train_loader:
+        inputs, labels = inputs.to(rank), labels.to(rank)
+        optimizer.zero_grad()
+        logps = model.forward(inputs)
+        loss = criterion(logps, labels)
+        torch.cuda.synchronize()
+        start_time.record()
+        loss.backward()
+
+
+        stop_time.record()
+        torch.cuda.synchronize()
+        
+        optimizer.step()
+
+        time_list.append(start_time.elapsed_time(stop_time))
+        
+        data_dict = dict()
+        data_dict['timing_log'] = time_list
+        file_name = f"test_random_k_training_{rank}_{epoch}.json"
+        with open(file_name, "w+") as fout:
+            json.dump(data_dict, fout)
+
+        train_loss += loss.item()
+        inputs.detach()
+        labels.detach()
+        logps.detach()
+    return train_loss
+
+def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
@@ -162,6 +208,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
 def main(
     rank,
     world_size,
+    pipeline = False,
     epochs = 2,
     batch_size = 1024,
     learning_rate = 0.003,
@@ -170,23 +217,26 @@ def main(
     use_pipeline_parallel=False,
     data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
-    setup(rank, world_size)
+    
+    setup(rank, world_size, pipeline)
 
     vgg16 = models.vgg16(weights = None)
     vgg16.to(rank)
     #vgg16 = DDP(vgg16, device_ids=[rank], output_device=rank)
-
+    grc = None
     if compression_type == 'fp16':
         vgg16.register_comm_hook(state=None, hook=fp16_compress_hook)
     elif compression_type == 'bf16':
         vgg16.register_comm_hook(state=None, hook=bf16_compress_hook)
+    elif compression_type == 'randomk':
+        grc = Allreduce(RandomKCompressor(0.5), NoneMemory(), world_size)
 
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
 
     criterion = nn.CrossEntropyLoss().to(rank)
     optimizer = optim.SGD(vgg16.parameters(), lr = learning_rate, momentum=0.9, weight_decay=1e-4)
     # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
-    grc = Allreduce(RandomKCompressor(0.5), NoneMemory(), world_size)
+    
 
     print(f"Start Training device {rank}")
     train_losses, val_losses = [], []
@@ -197,7 +247,10 @@ def main(
                 torch.profiler.ProfilerActivity.CUDA,
             ]
         ) as p:
-            train_loss = train(vgg16, train_loader, optimizer, criterion, rank, epoch, timer,grc)
+            if grc:
+                train_loss = train_grace(vgg16, train_loader, optimizer, criterion, rank, epoch, timer, grc)
+            else: 
+                train_loss = train(vgg16, train_loader, optimizer, criterion, rank, epoch, timer)
 
         print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
         #p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
