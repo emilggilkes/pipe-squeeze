@@ -73,9 +73,9 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
-            # print(f"logps device: {logps.device}")
-            # print(f"Rank: {rank}")
-            # print(f"Labels device: {labels.device}")
+            print(f"logps device: {logps.device}")
+            print(f"Rank: {rank}")
+            print(f"Labels device: {labels.device}")
             loss = criterion(logps, labels.to(logps.device))
             print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             loss.backward()
@@ -227,7 +227,7 @@ def main(
 
 if __name__ == "__main__":
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    world_size = 4
+    world_size = 2
     # data_dir_path = DATA_DIR_MAP[args.data_set]
 
     mp.spawn(
