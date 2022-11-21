@@ -62,6 +62,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         epoch_start_time = time.time()
         batch_start_time = time.time()
         for batch_idx, data in enumerate(train_loader):
+            print(f"inputs device, labels device, {data[0].device}, {data[1].device}")
             inputs, labels = data[0].to(torch.device(device,1)), data[1].to(torch.device(device, 3))
             #inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -176,7 +177,6 @@ def main(
     # data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
     setup(rank, world_size)
-    device = "cuda"
 
     ##DATASET
     train_loader, val_loader = create_data_loader(batch_size = 4, num_workers = 0)
@@ -224,7 +224,7 @@ def main(
 
 
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     world_size = 2
     # data_dir_path = DATA_DIR_MAP[args.data_set]
 
