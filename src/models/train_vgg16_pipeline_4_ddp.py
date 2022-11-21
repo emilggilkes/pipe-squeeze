@@ -76,7 +76,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
             print(f"logps device: {logps.device}")
             print(f"Rank: {rank}")
             print(f"Labels device: {labels.device}")
-            loss = criterion(logps, labels.to(torch.device(device, 2*rank+1))))
+            loss = criterion(logps, labels.to(torch.device(device, 2*rank+1)))
             loss.backward()
             #nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
