@@ -64,7 +64,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         for batch_idx, data in enumerate(train_loader):
             # print("In train loop")
             # print(f"inputs device, labels device, {data[0].device}, {data[1].device}")
-            inputs, labels = data[0].to(device), data[1].to(device)
+            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
             #inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
@@ -106,8 +106,8 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         model.eval()
         with torch.no_grad():
             for inputs, labels in val_loader:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
+                inputs = inputs.to(torch.device(device,2*rank))
+                labels = labels.to(torch.device(device,2*rank+1))
                 logps = model(inputs).local_value()
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
