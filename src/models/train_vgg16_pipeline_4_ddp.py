@@ -73,9 +73,9 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
-            print(f"logps device: {logps.device}")
-            print(f"Rank: {rank}")
-            print(f"Labels device: {labels.device}")
+            # print(f"logps device: {logps.device}")
+            # print(f"Rank: {rank}")
+            # print(f"Labels device: {labels.device}")
             loss = criterion(logps, labels.to(logps.device))
             print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             loss.backward()
@@ -193,10 +193,10 @@ def main(
 
     #NOT SURE IF THIS WORKS TO GROUP SPECIFIC GPUS TO A STAGE
     stages = module.model(criterion)
-    stage = stages["stage0"].to(torch.device(device, 0))
+    stage = stages["stage0"].to(torch.device(device, 2*rank))
     # stage = stages["stage0"].to(torch.device(device, 1))
     
-    stage = stages["stage1"].to(torch.device(device, 2))
+    stage = stages["stage1"].to(torch.device(device, 2*rank+1))
     # stage = stages["stage1"].to(torch.device(device, 3))
     
     model = nn.Sequential(stages)
