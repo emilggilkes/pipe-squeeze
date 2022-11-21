@@ -62,8 +62,8 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         epoch_start_time = time.time()
         batch_start_time = time.time()
         for batch_idx, data in enumerate(train_loader):
-            print("In train loop")
-            print(f"inputs device, labels device, {data[0].device}, {data[1].device}")
+            # print("In train loop")
+            # print(f"inputs device, labels device, {data[0].device}, {data[1].device}")
             inputs, labels = data[0].to(device), data[1].to(device)
             #inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -73,9 +73,9 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
-            print(f"logps device: {logps.device}")
-            print(f"Rank: {rank}")
-            print(f"Labels device: {labels.device}")
+            # print(f"logps device: {logps.device}")
+            # print(f"Rank: {rank}")
+            # print(f"Labels device: {labels.device}")
             loss = criterion(logps, labels.to(logps.device))
             loss.backward()
             #nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -110,10 +110,10 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
                 logps = model(inputs).local_value()
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
-                print("In train loop")
-                print(f"logps device: {logps.device}")
-                print(f"Rank: {rank}")
-                print(f"Labels device: {labels.device}")
+                # print("In train loop")
+                # print(f"logps device: {logps.device}")
+                # print(f"Rank: {rank}")
+                # print(f"Labels device: {labels.device}")
                 # logps = logps.to(labels.device)
                 batch_loss = criterion(logps, labels.to(logps.device)) # need to change this depending on num_gpus
                 val_loss += batch_loss.item()
