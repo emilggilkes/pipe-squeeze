@@ -77,6 +77,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
             # print(f"Rank: {rank}")
             # print(f"Labels device: {labels.device}")
             loss = criterion(logps, labels.to(logps.device))
+            print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             loss.backward()
             #nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
@@ -90,10 +91,10 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
                 elapsed = time.time() - batch_start_time
                 print('| epoch {:3d} | {:5d}/{:5d} batches | '
                     'lr {:02.2f} | ms/batch {:5.2f} | '
-                    'loss {:5.2f} | ppl {:8.2f}'.format(
+                    'loss {:5.2f}'.format(
                         epoch+1, batch_idx, nbatches, scheduler.get_last_lr()[0],
                         elapsed * 1000 / log_interval,
-                        cur_loss, np.exp(cur_loss)))
+                        cur_loss))
                 running_loss = 0
                 batch_start_time = time.time()
             # inputs.detach()
@@ -145,6 +146,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
     #for i, stage in enumerate(model):
         #torch.save(stage.state_dict(), f'../../models/pipelining_4gpus_straight stage{i} {str(datetime.date.today())}.pth')
 
+    cleanup()
 
 def get_total_params(module: torch.nn.Module):
     total_params = 0
