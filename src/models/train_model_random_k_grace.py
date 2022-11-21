@@ -2,6 +2,8 @@ import os
 import argparse
 import numpy as np
 import json
+from tqdm import tqdm
+
 import matplotlib.pyplot as plt
 import torch
 import torch.distributed as dist
@@ -22,7 +24,7 @@ from grace_random_k import *
 timer = Timer(skip_first=False)
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
-IMAGENET_DATA_SET_PATH_PREFIX='../data/ImageNet'
+IMAGENET_DATA_SET_PATH_PREFIX='../../data/ImageNet'
 
 DATA_DIR_MAP = {
     'sample': SAMPLE_DATA_SET_PATH_PREFIX,
@@ -125,7 +127,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
     #reducer = RandomKReducer(42, timer, 0.01, rank)
 
 
-    for inputs, labels in train_loader:
+    for inputs, labels in tqdm(train_loader):
         inputs, labels = inputs.to(rank), labels.to(rank)
         optimizer.zero_grad()
         logps = model.forward(inputs)

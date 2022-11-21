@@ -61,7 +61,7 @@ def sparsify(tensor, compress_ratio):
     values = tensor[indices]
     return indices, values
 
-class RandomKCompressor2(Compressor): 
+class RandomKCompressor2: 
     def __init__(self, compress_ratio):
         super().__init__()
         self.global_step = 0
@@ -83,20 +83,24 @@ class RandomKCompressor2(Compressor):
 
         ctx = indices, tensor.numel(), tensor.size()
         fut = dist.all_reduce(
-            [compressed_tensor], group=group_to_use, async_op=True
+            compressed_tensor, group=group_to_use, async_op=True
         ).get_future()
-
+        
+        print("########### COMPRESSED SHAPE:\n", compressed_tensor.size())
         def decompress(fut):
+            print("IN DECOMPRESS")
             decompressed_tensor = bucket.buffer()
             # Decompress in place to reduce the peak memory.
             # See: https://github.com/pytorch/pytorch/issues/45968
             decompressed_tensor.copy_(fut.value()[0])
+            print("here1")
             indices, numel, shape = ctx
             values, = decompressed_tensor
             tensor_decompressed = torch.zeros(numel, dtype=values.dtype, layout=values.layout, device=values.device)
             tensor_decompressed.scatter_(0, indices, values)
-            #return tensor_decompressed.view(shape)
-            return tensor_decompressed
+            print("########### DECOMPRESSED SHAPE:\n", tensor_decompress.size())
+            return tensor_decompressed.view(shape)
+            #return tensor_decompressed
 
             #return decompressed_tensor
 
