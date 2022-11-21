@@ -64,7 +64,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         for batch_idx, data in enumerate(train_loader):
             # print("In train loop")
             # print(f"inputs device, labels device, {data[0].device}, {data[1].device}")
-            inputs, labels = data[0].to(device), data[1].to(device)
+            inputs, labels = data[0].to(torch.device(device, 2*rank)), data[1].to(torch.device(device, 2*rank+1))
             #inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
@@ -106,8 +106,8 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         model.eval()
         with torch.no_grad():
             for inputs, labels in val_loader:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
+                inputs = inputs.to(torch.device(device, 2*rank))
+                labels = labels.to(torch.device(device, 2*rank+1))
                 logps = model(inputs).local_value()
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
@@ -146,7 +146,7 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
     #for i, stage in enumerate(model):
         #torch.save(stage.state_dict(), f'../../models/pipelining_4gpus_straight stage{i} {str(datetime.date.today())}.pth')
 
-    cleanup()
+    # cleanup()
 
 def get_total_params(module: torch.nn.Module):
     total_params = 0
@@ -227,7 +227,7 @@ def main(
 
 if __name__ == "__main__":
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    world_size = 2
+    world_size = 4
     # data_dir_path = DATA_DIR_MAP[args.data_set]
 
     mp.spawn(
@@ -238,8 +238,5 @@ if __name__ == "__main__":
         nprocs=world_size,
         join=True,
     )
-    ##TRAINING
-
-
 
 #https://github.com/pytorch/examples/blob/main/imagenet/main.py
