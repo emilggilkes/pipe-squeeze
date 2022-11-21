@@ -62,8 +62,6 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
         epoch_start_time = time.time()
         batch_start_time = time.time()
         for batch_idx, data in enumerate(train_loader):
-            # print("In train loop")
-            # print(f"inputs device, labels device, {data[0].device}, {data[1].device}")
             inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
             #inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -73,9 +71,6 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
             logps = model(inputs).local_value()
             # Need to move labels to the device where the output of the
             # pipeline resides.
-            # print(f"logps device: {logps.device}")
-            # print(f"Rank: {rank}")
-            # print(f"Labels device: {labels.device}")
             loss = criterion(logps, labels.to(logps.device))
             print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             loss.backward()
@@ -111,11 +106,6 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
                 logps = model(inputs).local_value()
                 # Need to move labels to the device where the output of the
                 # pipeline resides.
-                # print("In train loop")
-                # print(f"logps device: {logps.device}")
-                # print(f"Rank: {rank}")
-                # print(f"Labels device: {labels.device}")
-                # logps = logps.to(labels.device)
                 batch_loss = criterion(logps, labels.to(logps.device)) # need to change this depending on num_gpus
                 val_loss += batch_loss.item()
                 ps = torch.exp(logps)
@@ -146,7 +136,6 @@ def train(model, train_loader, val_loader, optimizer, criterion, scheduler, rank
     #for i, stage in enumerate(model):
         #torch.save(stage.state_dict(), f'../../models/pipelining_4gpus_straight stage{i} {str(datetime.date.today())}.pth')
 
-    # cleanup()
 
 def get_total_params(module: torch.nn.Module):
     total_params = 0
@@ -191,13 +180,9 @@ def main(
     module = importlib.import_module("vgg16.gpus=4")
     # arch = module.arch()
 
-    #NOT SURE IF THIS WORKS TO GROUP SPECIFIC GPUS TO A STAGE
     stages = module.model(criterion)
-    stage = stages["stage0"].to(torch.device(device, 2*rank))
-    # stage = stages["stage0"].to(torch.device(device, 1))
-    
+    stage = stages["stage0"].to(torch.device(device, 2*rank))    
     stage = stages["stage1"].to(torch.device(device, 2*rank+1))
-    # stage = stages["stage1"].to(torch.device(device, 3))
     
     model = nn.Sequential(stages)
     model = Pipe(model, chunks=8, checkpoint="never")
