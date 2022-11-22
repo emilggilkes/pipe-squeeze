@@ -14,26 +14,26 @@ class Memory(ABC):
         pass
 
 
-class Compressor(ABC):
-    """Interface for compressing and decompressing a given tensor."""
+# class Compressor(ABC):
+#     """Interface for compressing and decompressing a given tensor."""
 
-    def __init__(self, average=True, tensors_size_are_same=True):
-        self.average = average
-        self.tensors_size_are_same = tensors_size_are_same
+#     def __init__(self, average=True, tensors_size_are_same=True):
+#         self.average = average
+#         self.tensors_size_are_same = tensors_size_are_same
 
-    @abstractmethod
-    def compress(self, tensor, name):
-        """Compresses a tensor and returns it with the context needed to decompress it."""
-        raise NotImplemented("compress was not implemented.")
+#     @abstractmethod
+#     def compress(self, tensor, name):
+#         """Compresses a tensor and returns it with the context needed to decompress it."""
+#         raise NotImplemented("compress was not implemented.")
 
-    @abstractmethod
-    def decompress(self, tensors, ctx):
-        """Decompress the tensor with the given context."""
-        raise NotImplemented("decompress was not implemented.")
+#     @abstractmethod
+#     def decompress(self, tensors, ctx):
+#         """Decompress the tensor with the given context."""
+#         raise NotImplemented("decompress was not implemented.")
 
-    def aggregate(self, tensors):
-        """Aggregate a list of tensors."""
-        return sum(tensors)
+#     def aggregate(self, tensors):
+#         """Aggregate a list of tensors."""
+#         return sum(tensors)
 
 
 class Communicator(ABC):
@@ -62,13 +62,14 @@ def sparsify(tensor, compress_ratio):
     return indices, values
 
 
-class RandomKCompressor(Compressor):
+class RandomKCompressor:
     """Python libraries Based Compress by performing sparsification (i.e., sending a ratio of the actual tensor size."""
 
-    def __init__(self, compress_ratio):
+    def __init__(self, compress_ratio, average=True):
         super().__init__()
         self.global_step = 0
         self.compress_ratio = compress_ratio
+        self.average = average
 
     def compress(self, tensor, name):
         """Use Python Random libraries RNG to compress by generating a list of indices to be transmitted."""

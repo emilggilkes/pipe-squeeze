@@ -3,6 +3,8 @@ import argparse
 import numpy as np
 import json
 import tempfile
+from tqdm import tqdm
+
 import matplotlib.pyplot as plt
 import torch
 import torch.distributed as dist
@@ -24,7 +26,7 @@ from grace_random_k import *
 timer = Timer(skip_first=False)
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
-IMAGENET_DATA_SET_PATH_PREFIX='../data/ImageNet'
+IMAGENET_DATA_SET_PATH_PREFIX='../../data/ImageNet'
 
 DATA_DIR_MAP = {
     'sample': SAMPLE_DATA_SET_PATH_PREFIX,
@@ -132,7 +134,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     #reducer = RandomKReducer(42, timer, 0.01, rank)
 
 
-    for inputs, labels in train_loader:
+    for inputs, labels in tqdm(train_loader):
         inputs, labels = inputs.to(rank), labels.to(rank)
         optimizer.zero_grad()
         logps = model.forward(inputs)
@@ -171,7 +173,7 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
     #reducer = RandomKReducer(42, timer, 0.01, rank)
 
 
-    for inputs, labels in train_loader:
+    for inputs, labels in tqdm(train_loader):
         inputs, labels = inputs.to(rank), labels.to(rank)
         optimizer.zero_grad()
         logps = model.forward(inputs)
@@ -204,6 +206,23 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
         logps.detach()
     return train_loss
 
+class Compressor:
+    def __init__(self, compression_type, compression_ratio=None):
+        self.compression_type = compression_type
+        self.compression_ratio = compression_ratio
+
+class Trainer:
+    def __init__(self, train_loader, val_loader, optimizer, criterion, compressor=None):
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.optimizer = optimizer
+        self.criterion = criterion
+        self.compressor = compressor
+        
+    def train_pipe_ddp(self):
+        
+            
+        
 
 def main(
     rank,
@@ -229,7 +248,7 @@ def main(
     elif compression_type == 'bf16':
         vgg16.register_comm_hook(state=None, hook=bf16_compress_hook)
     elif compression_type == 'randomk':
-        grc = Allreduce(RandomKCompressor(0.5), NoneMemory(), world_size)
+        
 
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
 
@@ -240,20 +259,11 @@ def main(
 
     print(f"Start Training device {rank}")
     train_losses, val_losses = [], []
+    
     for epoch in range(epochs):
-        with torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ]
-        ) as p:
-            if grc:
-                train_loss = train_grace(vgg16, train_loader, optimizer, criterion, rank, epoch, timer, grc)
-            else: 
-                train_loss = train(vgg16, train_loader, optimizer, criterion, rank, epoch, timer)
+        train_loss = train(vgg16, train_loader, optimizer, criterion, rank, epoch, timer,grc)
 
-        print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
-        #p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
+        
         train_losses.append(train_loss/len(train_loader))
         
         avg_val_loss, val_accuracy = val(vgg16, val_loader, criterion, rank, epoch)
