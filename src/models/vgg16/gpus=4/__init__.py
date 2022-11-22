@@ -8,11 +8,10 @@ from .vgg16 import VGG16Partitioned
 def arch():
     return "vgg16"
 
-def model(criterion):
+def model():
     return [
         (Stage0(), ["input0"], ["out0"]),
-        (Stage1(), ["out0"], ["out1"]),
-        (criterion, ["out1"], ["loss"])
+        (Stage1(), ["out0"], ["out1"])
     ]
 
 def full_model():

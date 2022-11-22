@@ -4,6 +4,7 @@ import numpy as np
 import json
 import tempfile
 from tqdm import tqdm
+import importlib
 
 import matplotlib.pyplot as plt
 import torch
@@ -47,17 +48,12 @@ def setup_argparser():
     return parser
 
 
-def setup(rank, world_size, pipeline):
-    if pipeline:
-        tmpfile = tempfile.NamedTemporaryFile()
-        torch.distributed.rpc.init_rpc('worker', rank=0, world_size=1,rpc_backend_options=torch.distributed.rpc.TensorPipeRpcBackendOptions(
-        init_method="file://{}".format(tmpfile.name)))
-    else:
-        os.environ['MASTER_ADDR'] = 'localhost'
-        os.environ['MASTER_PORT'] = '12355'
+def setup_ddp(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
 
-        dist.init_process_group(backend="nccl", rank = rank, world_size = world_size)
-        print(f"Initiated Process Group with rank = {rank} and world_size = {world_size}")
+    dist.init_process_group(backend="nccl", rank = rank, world_size = world_size)
+    print(f"Initiated Process Group with rank = {rank} and world_size = {world_size}")
 
 def cleanup():
     dist.destroy_process_group()
@@ -77,8 +73,8 @@ def create_data_loader(rank, world_size, batch_size, data_set_dirpath):
         raise Exception("Batch size must be a multiple of the number of workers")
 
     batch_size = batch_size // world_size
-    train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
-    val_set   = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
+    train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform).cuda(2 * rank)
+    val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
 
     train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)
     val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)
@@ -106,9 +102,8 @@ def val(model, val_loader, criterion, rank, epoch):
     with torch.no_grad():
         val_loader.sampler.set_epoch(epoch)
         for inputs, labels in val_loader:
-            inputs, labels = inputs.to(rank), labels.to(rank)
             logps = model.forward(inputs)
-            batch_loss = criterion(logps, labels)
+            batch_loss = criterion(logps, labels.to('cuda', 2 * rank + 1))
             val_loss += batch_loss.item()
             ps = torch.exp(logps)
             top_p, top_class = ps.topk(1, dim=1)
@@ -130,15 +125,18 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     train_loader.sampler.set_epoch(epoch)
     start_time = torch.cuda.Event(enable_timing=True)
     stop_time = torch.cuda.Event(enable_timing=True)
-    time_list = list()
-    #reducer = RandomKReducer(42, timer, 0.01, rank)
+    time_list = list()    
 
-
+    print(len(train_loader))
     for inputs, labels in tqdm(train_loader):
-        inputs, labels = inputs.to(rank), labels.to(rank)
         optimizer.zero_grad()
-        logps = model.forward(inputs)
-        loss = criterion(logps, labels)
+        # Since the Pipe is only within a single host and process the ``RRef``
+        # returned by forward method is local to this node and can simply
+        # retrieved via ``RRef.local_value()``.
+        logps = model(inputs).local_value()
+        
+        # need to send labels to device with stage 1
+        loss = criterion(logps, labels.to('cuda', 2 * rank + 1))
         torch.cuda.synchronize()
         start_time.record()
         loss.backward()
@@ -206,23 +204,28 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
         logps.detach()
     return train_loss
 
-class Compressor:
-    def __init__(self, compression_type, compression_ratio=None):
-        self.compression_type = compression_type
-        self.compression_ratio = compression_ratio
+# class Compressor:
+#     def __init__(self, compression_type, compression_ratio=None):
+#         self.compression_type = compression_type
+#         self.compression_ratio = compression_ratio
 
-class Trainer:
-    def __init__(self, train_loader, val_loader, optimizer, criterion, compressor=None):
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.optimizer = optimizer
-        self.criterion = criterion
-        self.compressor = compressor
+# class Trainer:
+#     def __init__(self, train_loader, val_loader, optimizer, criterion, compressor=None):
+#         self.train_loader = train_loader
+#         self.val_loader = val_loader
+#         self.optimizer = optimizer
+#         self.criterion = criterion
+#         self.compressor = compressor
         
-    def train_pipe_ddp(self):
-        
+#     def train_pipe_ddp(self):
+#         pass
             
         
+def get_total_params(module: torch.nn.Module):
+    total_params = 0
+    for param in module.parameters():
+        total_params += param.numel()
+    return total_params
 
 def main(
     rank,
@@ -236,24 +239,51 @@ def main(
     use_pipeline_parallel=False,
     data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
-    
-    setup(rank, world_size, pipeline)
 
-    vgg16 = models.vgg16(weights = None)
-    vgg16.to(rank)
-    #vgg16 = DDP(vgg16, device_ids=[rank], output_device=rank)
-    grc = None
+    ## DATASET
+    train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
+
+
+    # We need to initialize the RPC framework with only a single worker since we're using a
+    # single process to drive multiple GPUs.
+    tmpfile = tempfile.NamedTemporaryFile()
+    torch.distributed.rpc.init_rpc('worker', rank=0, world_size=1,rpc_backend_options=torch.distributed.rpc.TensorPipeRpcBackendOptions(
+        init_method="file://{}".format(tmpfile.name)))
+
+    # create stages of the model
+    module = importlib.import_module("vgg16.gpus=4")
+    stages = module.model()
+    stage = stages["stage0"].to(torch.device(device, 2*rank))    
+    stage = stages["stage1"].to(torch.device(device, 2*rank+1))
+
+    # build model pipeline
+    model = nn.Sequential(stages)
+    model = Pipe(model, chunks=8, checkpoint="never")
+    
+    # setup data parallelism
+    setup_ddp(rank, world_size)
+    model = DDP(model)
+
+    # define train settings
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr = 0.003, momentum=0.9, weight_decay=0.0001)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+
+    print ('Total parameters in model: {:,}'.format(get_total_params(model)))
+    for i, stage in enumerate(model):
+        print ('Total parameters in stage {}: {:,}'.format(i, get_total_params(stage)))
+    
+
+    
     if compression_type == 'fp16':
         vgg16.register_comm_hook(state=None, hook=fp16_compress_hook)
     elif compression_type == 'bf16':
         vgg16.register_comm_hook(state=None, hook=bf16_compress_hook)
     elif compression_type == 'randomk':
-        
+        pass
 
-    train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
 
-    criterion = nn.CrossEntropyLoss().to(rank)
-    optimizer = optim.SGD(vgg16.parameters(), lr = learning_rate, momentum=0.9, weight_decay=1e-4)
+    
     # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
     
 
@@ -261,12 +291,12 @@ def main(
     train_losses, val_losses = [], []
     
     for epoch in range(epochs):
-        train_loss = train(vgg16, train_loader, optimizer, criterion, rank, epoch, timer,grc)
+        train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
 
         
         train_losses.append(train_loss/len(train_loader))
         
-        avg_val_loss, val_accuracy = val(vgg16, val_loader, criterion, rank, epoch)
+        avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
         val_losses.append(avg_val_loss)
 
         print(f"Epoch {epoch+1}/{epochs}   "
@@ -278,7 +308,7 @@ def main(
     cleanup()
     
     if save_on_finish:
-        torch.save(vgg16.state_dict(), f'../../models/vgg16_{rank}.pth')
+        torch.save(model.state_dict(), f'../../models/vgg16_{rank}.pth')
     
     print(f"Finished Training device {rank}")
     if False:
