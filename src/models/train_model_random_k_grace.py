@@ -34,6 +34,8 @@ DATA_DIR_MAP = {
     'ImageNet': IMAGENET_DATA_SET_PATH_PREFIX,
 }   
 
+device = 'cuda'
+
 
 def setup_argparser():
     parser = argparse.ArgumentParser()
@@ -73,7 +75,7 @@ def create_data_loader(rank, world_size, batch_size, data_set_dirpath):
         raise Exception("Batch size must be a multiple of the number of workers")
 
     batch_size = batch_size // world_size
-    train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform).cuda(2 * rank)
+    train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
     val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
 
     train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)
@@ -102,8 +104,8 @@ def val(model, val_loader, criterion, rank, epoch):
     with torch.no_grad():
         val_loader.sampler.set_epoch(epoch)
         for inputs, labels in val_loader:
-            logps = model.forward(inputs)
-            batch_loss = criterion(logps, labels.to('cuda', 2 * rank + 1))
+            logps = model.forward(inputs.to(torch.device(device, 2 * rank)))
+            batch_loss = criterion(logps, labels.to(torch.device(device, 2 * rank + 1)))
             val_loss += batch_loss.item()
             ps = torch.exp(logps)
             top_p, top_class = ps.topk(1, dim=1)
@@ -128,7 +130,8 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     time_list = list()    
 
     print(len(train_loader))
-    for inputs, labels in tqdm(train_loader):
+    for batch_idx, data in enumerate(train_loader):
+        inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
         optimizer.zero_grad()
         # Since the Pipe is only within a single host and process the ``RRef``
         # returned by forward method is local to this node and can simply
@@ -136,7 +139,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
         logps = model(inputs).local_value()
         
         # need to send labels to device with stage 1
-        loss = criterion(logps, labels.to('cuda', 2 * rank + 1))
+        loss = criterion(logps, labels.to(logps.device))
         torch.cuda.synchronize()
         start_time.record()
         loss.backward()
@@ -147,7 +150,6 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
         
         optimizer.step()
 
-        time_list.append(start_time.elapsed_time(stop_time))
         
         data_dict = dict()
         data_dict['timing_log'] = time_list
@@ -172,7 +174,7 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
 
 
     for inputs, labels in tqdm(train_loader):
-        inputs, labels = inputs.to(rank), labels.to(rank)
+        inputs, labels = inputs.to(torch.device(device, rank)), labels.to(rank)
         optimizer.zero_grad()
         logps = model.forward(inputs)
         loss = criterion(logps, labels)
@@ -230,13 +232,11 @@ def get_total_params(module: torch.nn.Module):
 def main(
     rank,
     world_size,
-    pipeline = False,
     epochs = 2,
     batch_size = 1024,
     learning_rate = 0.003,
     compression_type=None,
     save_on_finish=False,
-    use_pipeline_parallel=False,
     data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
 
@@ -260,6 +260,10 @@ def main(
     model = nn.Sequential(stages)
     model = Pipe(model, chunks=8, checkpoint="never")
     
+    print ('Total parameters in model: {:,}'.format(get_total_params(model)))
+    for i, stage in enumerate(model):
+        print ('Total parameters in stage {}: {:,}'.format(i, get_total_params(stage)))
+        
     # setup data parallelism
     setup_ddp(rank, world_size)
     model = DDP(model)
@@ -269,9 +273,7 @@ def main(
     optimizer = optim.SGD(model.parameters(), lr = 0.003, momentum=0.9, weight_decay=0.0001)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 
-    print ('Total parameters in model: {:,}'.format(get_total_params(model)))
-    for i, stage in enumerate(model):
-        print ('Total parameters in stage {}: {:,}'.format(i, get_total_params(stage)))
+    
     
 
     
@@ -339,7 +341,6 @@ if __name__ == "__main__":
             args.learning_rate,
             args.compression_type,
             args.save_on_finish,
-            args.use_pipeline_parallel,
             data_dir_path,
         ),
         nprocs=world_size,
