@@ -160,6 +160,23 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
         logps.detach()
     return train_loss
 
+class Compressor:
+    def __init__(self, compression_type, compression_ratio=None):
+        self.compression_type = compression_type
+        self.compression_ratio = compression_ratio
+
+class Trainer:
+    def __init__(self, train_loader, val_loader, optimizer, criterion, compressor=None):
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.optimizer = optimizer
+        self.criterion = criterion
+        self.compressor = compressor
+        
+    def train_pipe_ddp(self):
+        
+            
+        
 
 def main(
     rank,
@@ -182,6 +199,8 @@ def main(
         vgg16.register_comm_hook(state=None, hook=fp16_compress_hook)
     elif compression_type == 'bf16':
         vgg16.register_comm_hook(state=None, hook=bf16_compress_hook)
+    elif compression_type == 'randomk':
+        
 
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
 
@@ -192,17 +211,11 @@ def main(
 
     print(f"Start Training device {rank}")
     train_losses, val_losses = [], []
+    
     for epoch in range(epochs):
-        with torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ]
-        ) as p:
-            train_loss = train(vgg16, train_loader, optimizer, criterion, rank, epoch, timer,grc)
+        train_loss = train(vgg16, train_loader, optimizer, criterion, rank, epoch, timer,grc)
 
-        print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
-        #p.export_chrome_trace(f"trace_nocomp_epoch_{epoch}_{rank}.json")
+        
         train_losses.append(train_loss/len(train_loader))
         
         avg_val_loss, val_accuracy = val(vgg16, val_loader, criterion, rank, epoch)
