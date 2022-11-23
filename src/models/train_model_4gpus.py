@@ -5,7 +5,7 @@ import json
 import tempfile
 from tqdm import tqdm
 import importlib
-import datetime
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import torch
@@ -25,7 +25,7 @@ import torch.multiprocessing as mp
 from timer import Timer
 from grace_random_k import *
 
-timer = Timer(skip_first=False)
+
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
 IMAGENET_DATA_SET_PATH_PREFIX='../../data/ImageNet'
@@ -44,6 +44,7 @@ def setup_argparser():
     parser.add_argument('--num-procs', help='Number of processes to use', type=int, required=True)
     #parser.add_argument('--num-gpus', help='Number of GPUs to use', type=int, required=True)
     parser.add_argument('--compression-type', help='Type of compression to use. Options are fp16, bf16, PowerSGD, None', default=None, required=False)
+    parser.add_argument('--compression-ratio', help='Float representing compression ratio', type=float, default=None, required=False)
     #parser.add_argument('--use-pipeline-parallel', help='Whether or not to use pipeline parallelism (GPipe)', default=False, type=bool)
     parser.add_argument('--data-set', help='Whether to use the small sample dataset or Imagenette dataset', type=str, default='sample')
     parser.add_argument('--save-on-finish', help='Saves model weights upon training completion', type=bool, default=False)
@@ -62,7 +63,7 @@ def cleanup():
     dist.destroy_process_group()
 
 def create_data_loader(rank, world_size, batch_size, data_set_dirpath):
-    print(f"Create data loader device {rank}")
+    print(f"Create data loader rank {rank}")
     train_transform = transforms.Compose([
         transforms.RandomResizedCrop(224),
         transforms.ToTensor(),
@@ -105,12 +106,15 @@ def val(model, val_loader, criterion, rank, epoch):
     with torch.no_grad():
         val_loader.sampler.set_epoch(epoch)
         for inputs, labels in val_loader:
-            logps = model.forward(inputs)
+            # Since the Pipe is only within a single host and process the ``RRef``
+            # returned by forward method is local to this node and can simply
+            # retrieved via ``RRef.local_value()``.
+            logps = model(inputs.to(torch.device(device, 2 * rank))).local_value()
             batch_loss = criterion(logps, labels.to(torch.device(device, 2 * rank + 1)))
             val_loss += batch_loss.item()
             ps = torch.exp(logps)
-            top_p, top_class = ps.topk(1, dim=1)
-            equals = top_class == labels.view(*top_class.shape)
+            top_p, top_class = ps.cpu().topk(1, dim=1)
+            equals = top_class == labels.view(*top_class.shape).cpu()
             accuracy += torch.mean(equals.type(torch.FloatTensor)).item()
             inputs.detach()
             labels.detach()
@@ -129,14 +133,15 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     # start_time = torch.cuda.Event(enable_timing=True)
     # stop_time = torch.cuda.Event(enable_timing=True)
     # time_list = list()    
-
+    
+    
     iterator = tqdm(train_loader)
     #print(len(train_loader))
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(tqdm(train_loader)):
-            iterator.set_postfix_str(f'RANK: {rank} | BATCH: {batch_idx+1}')
+            iterator.set_postfix_str(f'RANK: {rank}')
             inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
-            print('n_batches:', len(inputs))
+            #print('n_batches:', len(inputs))
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
             # returned by forward method is local to this node and can simply
@@ -150,7 +155,6 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             with timer(f'backward_epoch{epoch}_batch{batch_idx}_rank{rank}'):
                 loss.backward()
-
             # stop_time.record()
             torch.cuda.synchronize()
             
@@ -168,6 +172,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             inputs.detach()
             labels.detach()
             logps.detach()
+        
     return train_loss
 
 def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
@@ -182,9 +187,8 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
     #print(len(train_loader))
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(tqdm(train_loader)):
-            iterator.set_postfix_str(f'RANK: {rank} | BATCH: {batch_idx+1}')
+            iterator.set_postfix_str(f'RANK: {rank}')
             inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
-            print('n_batches:', len(inputs))
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
             # returned by forward method is local to this node and can simply
@@ -196,7 +200,7 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
             # start_time.record()
             iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
-            with timer(f'backward_epoch{epoch}_batch{batch_idx}_rank{rank}'):
+            with timer(f"backward_epoch{epoch}_batch{batch_idx}_rank{rank}"):
                 loss.backward()
             with timer(f'randomk_epoch{epoch}_batch{batch_idx}_rank{rank}'):
                 for index, (name, parameter) in enumerate(model.named_parameters()):
@@ -267,9 +271,11 @@ def main(
     batch_size = 1024,
     learning_rate = 0.003,
     compression_type=None,
+    compression_ratio=None,
     save_on_finish=False,
     data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
+    timer = Timer(skip_first=False, verbosity_level=0)
 
     ## DATASET
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
@@ -319,7 +325,7 @@ def main(
 
     # if using random k compression, can't use profiler and need to use train_grace() for training
     if compression_type == 'randomk':
-        grc = Allreduce(RandomKCompressor(0.5), NoneMemory(), world_size)
+        grc = Allreduce(RandomKCompressor(compression_ratio), NoneMemory(), world_size)
         train_losses, val_losses = [], []
         print(f"Start Training device {rank}")
         for epoch in range(epochs):
@@ -391,7 +397,7 @@ if __name__ == "__main__":
 
     print(f'Using device {device} with device count : {args.num_procs}')
     print(f'Training params:\nEpochs: {args.epochs}\nBatch Size: {args.batch_size}\nLearning Rate: {args.learning_rate}')
-    print(f'Compression Type: {args.compression_type}\nData dir path: {data_dir_path}')
+    print(f'Compression Type: {args.compression_type}\nCompression Ratio: {args.compression_ratio}\nData dir path: {data_dir_path}')
 
     mp.spawn(
         main,
@@ -401,10 +407,11 @@ if __name__ == "__main__":
             args.batch_size,
             args.learning_rate,
             args.compression_type,
+            args.compression_ratio,
             args.save_on_finish,
             data_dir_path,
         ),
         nprocs=args.num_procs,
         join=True,
     )
-    print(timer.summary())
+    #print(timer.summary())
