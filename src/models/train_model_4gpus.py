@@ -28,7 +28,7 @@ from grace_random_k import *
 
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
-IMAGENET_DATA_SET_PATH_PREFIX='../../data/ImageNet'
+IMAGENET_DATA_SET_PATH_PREFIX='../data/ImageNet'
 
 DATA_DIR_MAP = {
     'sample': SAMPLE_DATA_SET_PATH_PREFIX,
@@ -156,6 +156,9 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             with timer(f'backward_epoch{epoch}_rank{rank}'):
                 loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+            
             # stop_time.record()
             torch.cuda.synchronize()
             
@@ -206,6 +209,9 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             with timer(f"backward_rank{rank}"):
                 loss.backward()
+           
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+
             with timer(f'randomk_rank{rank}'):
                 for index, (name, parameter) in enumerate(model.named_parameters()):
                     grad = parameter.grad.data
