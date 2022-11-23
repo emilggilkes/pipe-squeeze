@@ -154,7 +154,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             # start_time.record()
             iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
-            with timer(f'backward_epoch{epoch}_batch{batch_idx}_rank{rank}'):
+            with timer(f'backward_epoch{epoch}_rank{rank}'):
                 loss.backward()
             # stop_time.record()
             torch.cuda.synchronize()
