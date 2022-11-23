@@ -5,6 +5,7 @@ import json
 import tempfile
 from tqdm import tqdm
 import importlib
+import datetime
 
 import matplotlib.pyplot as plt
 import torch
@@ -40,9 +41,10 @@ def setup_argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', '--bs', help='Effective batch size. Will be divided by number of GPUs.', type=int, required=True)
     parser.add_argument('--learning-rate', '--lr', help='Learning rate', type=float, required=True)
-    parser.add_argument('--num-gpus', help='Number of GPUs to use', type=int, required=True)
+    parser.add_argument('--num-procs', help='Number of processes to use', type=int, required=True)
+    #parser.add_argument('--num-gpus', help='Number of GPUs to use', type=int, required=True)
     parser.add_argument('--compression-type', help='Type of compression to use. Options are fp16, bf16, PowerSGD, None', default=None, required=False)
-    parser.add_argument('--use-pipeline-parallel', help='Whether or not to use pipeline parallelism (GPipe)', default=False, type=bool)
+    #parser.add_argument('--use-pipeline-parallel', help='Whether or not to use pipeline parallelism (GPipe)', default=False, type=bool)
     parser.add_argument('--data-set', help='Whether to use the small sample dataset or Imagenette dataset', type=str, default='sample')
     parser.add_argument('--save-on-finish', help='Saves model weights upon training completion', type=bool, default=False)
     parser.add_argument('--epochs', help='Number of epochs to train for', type=int, default=2)
@@ -53,7 +55,7 @@ def setup_ddp(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
 
-    dist.init_process_group(backend="nccl", rank = rank, world_size = world_size)
+    dist.init_process_group(backend="gloo", rank = rank, world_size = world_size)
     print(f"Initiated Process Group with rank = {rank} and world_size = {world_size}")
 
 def cleanup():
@@ -124,88 +126,101 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
-    start_time = torch.cuda.Event(enable_timing=True)
-    stop_time = torch.cuda.Event(enable_timing=True)
-    time_list = list()    
+    # start_time = torch.cuda.Event(enable_timing=True)
+    # stop_time = torch.cuda.Event(enable_timing=True)
+    # time_list = list()    
 
-    print(len(train_loader))
-    for batch_idx, data in enumerate(train_loader):
-        inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
-        print('n_batches:', len(inputs))
-        optimizer.zero_grad()
-        # Since the Pipe is only within a single host and process the ``RRef``
-        # returned by forward method is local to this node and can simply
-        # retrieved via ``RRef.local_value()``.
-        logps = model(inputs).local_value()
-        
-        # need to send labels to device with stage 1
-        loss = criterion(logps, labels.to(torch.device(device, 2 * rank + 1)))
-        torch.cuda.synchronize()
-        print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
-        start_time.record()
-        loss.backward()
+    iterator = tqdm(train_loader)
+    #print(len(train_loader))
+    with timer(f'trainloop_epoch{epoch}_rank{rank}'):
+        for batch_idx, data in enumerate(tqdm(train_loader)):
+            iterator.set_postfix_str(f'RANK: {rank} | BATCH: {batch_idx+1}')
+            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
+            print('n_batches:', len(inputs))
+            optimizer.zero_grad()
+            # Since the Pipe is only within a single host and process the ``RRef``
+            # returned by forward method is local to this node and can simply
+            # retrieved via ``RRef.local_value()``.
+            logps = model(inputs).local_value()
+            # need to send labels to device with stage 1
+            loss = criterion(logps, labels)
+            torch.cuda.synchronize()
+            # start_time.record()
+            iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
+            #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
+            with timer(f'backward_epoch{epoch}_batch{batch_idx}_rank{rank}'):
+                loss.backward()
 
+            # stop_time.record()
+            torch.cuda.synchronize()
+            
+            optimizer.step()
 
-        stop_time.record()
-        torch.cuda.synchronize()
-        
-        optimizer.step()
+            # time_list.append(start_time.elapsed_time(stop_time))
+            
+            # data_dict = dict()
+            # data_dict['timing_log'] = time_list
+            # file_name = f"test_random_k_training_{rank}_{epoch}.json"
+            # with open(file_name, "w+") as fout:
+            #     json.dump(data_dict, fout)
 
-        time_list.append(start_time.elapsed_time(stop_time))
-        
-        data_dict = dict()
-        data_dict['timing_log'] = time_list
-        file_name = f"test_random_k_training_{rank}_{epoch}.json"
-        with open(file_name, "w+") as fout:
-            json.dump(data_dict, fout)
-
-        train_loss += loss.item()
-        inputs.detach()
-        labels.detach()
-        logps.detach()
+            train_loss += loss.item()
+            inputs.detach()
+            labels.detach()
+            logps.detach()
     return train_loss
 
 def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
-    start_time = torch.cuda.Event(enable_timing=True)
-    stop_time = torch.cuda.Event(enable_timing=True)
-    time_list = list()
-    #reducer = RandomKReducer(42, timer, 0.01, rank)
+    # start_time = torch.cuda.Event(enable_timing=True)
+    # stop_time = torch.cuda.Event(enable_timing=True)
+    # time_list = list()    
 
+    iterator = tqdm(train_loader)
+    #print(len(train_loader))
+    with timer(f'trainloop_epoch{epoch}_rank{rank}'):
+        for batch_idx, data in enumerate(tqdm(train_loader)):
+            iterator.set_postfix_str(f'RANK: {rank} | BATCH: {batch_idx+1}')
+            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
+            print('n_batches:', len(inputs))
+            optimizer.zero_grad()
+            # Since the Pipe is only within a single host and process the ``RRef``
+            # returned by forward method is local to this node and can simply
+            # retrieved via ``RRef.local_value()``.
+            logps = model(inputs).local_value()
+            # need to send labels to device with stage 1
+            loss = criterion(logps, labels)
+            torch.cuda.synchronize()
+            # start_time.record()
+            iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
+            #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
+            with timer(f'backward_epoch{epoch}_batch{batch_idx}_rank{rank}'):
+                loss.backward()
+            with timer(f'randomk_epoch{epoch}_batch{batch_idx}_rank{rank}'):
+                for index, (name, parameter) in enumerate(model.named_parameters()):
+                    grad = parameter.grad.data
+                    new_tensor = grc.step(grad, name)
+                    grad.copy_(new_tensor)
 
-    for inputs, labels in tqdm(train_loader):
-        inputs, labels = inputs.to(rank), labels.to(rank)
-        optimizer.zero_grad()
-        logps = model.forward(inputs)
-        loss = criterion(logps, labels)
-        torch.cuda.synchronize()
-        start_time.record()
-        loss.backward()
-        for index, (name, parameter) in enumerate(model.named_parameters()):
-            grad = parameter.grad.data
-            new_tensor = grc.step(grad, name)
-            grad.copy_(new_tensor)
+            # stop_time.record()
+            torch.cuda.synchronize()
+            
+            optimizer.step()
 
+            # time_list.append(start_time.elapsed_time(stop_time))
+            
+            # data_dict = dict()
+            # data_dict['timing_log'] = time_list
+            # file_name = f"test_random_k_training_{rank}_{epoch}.json"
+            # with open(file_name, "w+") as fout:
+            #     json.dump(data_dict, fout)
 
-        stop_time.record()
-        torch.cuda.synchronize()
-        
-        optimizer.step()
-
-        time_list.append(start_time.elapsed_time(stop_time))
-        
-        data_dict = dict()
-        data_dict['timing_log'] = time_list
-        file_name = f"test_random_k_training_{rank}_{epoch}.json"
-        with open(file_name, "w+") as fout:
-            json.dump(data_dict, fout)
-
-        train_loss += loss.item()
-        inputs.detach()
-        labels.detach()
-        logps.detach()
+            train_loss += loss.item()
+            inputs.detach()
+            labels.detach()
+            logps.detach()
     return train_loss
 
 # class Compressor:
@@ -231,6 +246,20 @@ def get_total_params(module: torch.nn.Module):
         total_params += param.numel()
     return total_params
 
+def record_train_params(rank, world_size, epochs, batch_size, learning_rate, momentum, weight_decay, scheduler_step_size, gamma):
+    train_params = {}
+    train_params['rank'] = rank
+    train_params['world_size'] = world_size
+    train_params['epochs'] = epochs
+    train_params['batch_size'] = batch_size
+    train_params['learning_rate'] = learning_rate
+    train_params['momentum'] = momentum
+    train_params['weight_decay'] = weight_decay
+    train_params['scheduler_step_size'] = scheduler_step_size
+    train_params['gamma'] = gamma
+
+    return train_params
+
 def main(
     rank,
     world_size,
@@ -239,7 +268,6 @@ def main(
     learning_rate = 0.003,
     compression_type=None,
     save_on_finish=False,
-    use_pipeline_parallel=False,
     data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
 
@@ -261,7 +289,8 @@ def main(
 
     # build model pipeline
     model = nn.Sequential(stages)
-    model = Pipe(model, chunks=8, checkpoint="never")
+    n_microbatches = 8
+    model = Pipe(model, chunks=n_microbatches, checkpoint="never")
     
     print ('Total parameters in model: {:,}'.format(get_total_params(model)))
     for i, stage in enumerate(model):
@@ -273,42 +302,69 @@ def main(
 
     # define train settings
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr = 0.003, momentum=0.9, weight_decay=0.0001)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
-
+    momentum = 0.9
+    weight_decay = 0.0001
+    optimizer = optim.SGD(model.parameters(), lr = learning_rate, momentum=momentum, weight_decay=weight_decay)
+    step_size = 50
+    gamma = 0.9
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     
-    
-
-    
+    train_params = record_train_params(rank, world_size, epochs, batch_size, learning_rate, momentum, weight_decay, step_size, gamma)
+   
+    # Add communication hook doing floating point compression
     if compression_type == 'fp16':
-        vgg16.register_comm_hook(state=None, hook=fp16_compress_hook)
+        model.register_comm_hook(state=None, hook=fp16_compress_hook)
     elif compression_type == 'bf16':
-        vgg16.register_comm_hook(state=None, hook=bf16_compress_hook)
-    elif compression_type == 'randomk':
-        pass
+        model.register_comm_hook(state=None, hook=bf16_compress_hook)
 
+    # if using random k compression, can't use profiler and need to use train_grace() for training
+    if compression_type == 'randomk':
+        grc = Allreduce(RandomKCompressor(0.5), NoneMemory(), world_size)
+        train_losses, val_losses = [], []
+        print(f"Start Training device {rank}")
+        for epoch in range(epochs):
+            train_loss = train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer,grc)
 
-    
-    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
-    
-
-    print(f"Start Training device {rank}")
-    train_losses, val_losses = [], []
-    
-    for epoch in range(epochs):
-        train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
-
+            train_losses.append(train_loss/len(train_loader))
         
-        train_losses.append(train_loss/len(train_loader))
-        
-        avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
-        val_losses.append(avg_val_loss)
+            avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
+            val_losses.append(avg_val_loss)
 
-        print(f"Epoch {epoch+1}/{epochs}   "
-                f"Device {rank}   "
-                f"Train loss: {train_loss/len(train_loader):.3f}   "
-                f"Validation loss: {avg_val_loss:.3f}   "
-                f"Validation accuracy: {val_accuracy:.3f}")
+            print(f"Epoch {epoch+1}/{epochs}   "
+                    f"Device {rank}   "
+                    f"Train loss: {train_loss/len(train_loader):.3f}   "
+                    f"Validation loss: {avg_val_loss:.3f}   "
+                    f"Validation accuracy: {val_accuracy:.3f}")
+            scheduler.step()
+    else:
+        print(f"Start Training device {rank}")
+        train_losses, val_losses = [], []
+        
+        for epoch in range(epochs):
+            with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ]
+            ) as p:
+                train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
+            
+            print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
+            p.export_chrome_trace(f"../../reports/raw_time_data/profiler/trace_epoch{epoch}_rank{rank}.json")
+            train_losses.append(train_loss/len(train_loader))
+            
+            avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
+            val_losses.append(avg_val_loss)
+
+            print(f"Epoch {epoch+1}/{epochs}   "
+                    f"Device {rank}   "
+                    f"Train loss: {train_loss/len(train_loader):.3f}   "
+                    f"Validation loss: {avg_val_loss:.3f}   "
+                    f"Validation accuracy: {val_accuracy:.3f}")
+            scheduler.step()
+
+    timer.save_summary(f"../../reports/raw_time_data/timer/rank{rank}_summary_{datetime.now()}.json", train_params)
+    
 
     cleanup()
     
@@ -323,32 +379,32 @@ def main(
         plt.show()
 
 
+
 if __name__ == "__main__":
     parser = setup_argparser()
     args = parser.parse_args()
 
    
     #world_size = min(torch.cuda.device_count(), args.num_gpus)
-    world_size = 2
+    #world_size = 2
     data_dir_path = DATA_DIR_MAP[args.data_set]
 
-    print(f'Using device {device} with device count : {world_size}')
+    print(f'Using device {device} with device count : {args.num_procs}')
     print(f'Training params:\nEpochs: {args.epochs}\nBatch Size: {args.batch_size}\nLearning Rate: {args.learning_rate}')
-    print(f'Compression Type: {args.compression_type}\nPipelining: {args.use_pipeline_parallel}\nData dir path: {data_dir_path}')
+    print(f'Compression Type: {args.compression_type}\nData dir path: {data_dir_path}')
 
     mp.spawn(
         main,
         args=(
-            world_size,
+            args.num_procs,
             args.epochs,
             args.batch_size,
             args.learning_rate,
             args.compression_type,
             args.save_on_finish,
-            args.use_pipeline_parallel,
             data_dir_path,
         ),
-        nprocs=world_size,
+        nprocs=args.num_procs,
         join=True,
     )
     print(timer.summary())
