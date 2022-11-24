@@ -21,13 +21,13 @@ class Stage1(torch.nn.Module):
         out0 = input0.clone()
         out1 = out0.size(0)
         out2 = out0.view(out1, -1)
-        out3 = self.layer19(out2)
-        out4 = self.layer20(out3)
-        out5 = self.layer21(out4)
-        out6 = self.layer22(out5)
-        out7 = self.layer23(out6)
-        out8 = self.layer24(out7)
-        out9 = self.layer25(out8)
+        out3 = self.layer1(out2)
+        out4 = self.layer2(out3)
+        out5 = self.layer3(out4)
+        out6 = self.layer4(out5)
+        out7 = self.layer5(out6)
+        out8 = self.layer6(out7)
+        out9 = self.layer7(out8)
         return out9
 
     def _initialize_weights(self):
@@ -42,4 +42,3 @@ class Stage1(torch.nn.Module):
             elif isinstance(m, torch.nn.Linear):
                 torch.nn.init.normal_(m.weight, 0, 0.01)
                 torch.nn.init.constant_(m.bias, 0)
-
