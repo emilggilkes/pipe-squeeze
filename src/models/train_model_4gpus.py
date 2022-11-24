@@ -28,7 +28,7 @@ from grace_random_k import *
 
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
-IMAGENET_DATA_SET_PATH_PREFIX='../../data/ImageNet'
+IMAGENET_DATA_SET_PATH_PREFIX='../data/ImageNet'
 
 DATA_DIR_MAP = {
     'sample': SAMPLE_DATA_SET_PATH_PREFIX,
@@ -146,15 +146,19 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             # Since the Pipe is only within a single host and process the ``RRef``
             # returned by forward method is local to this node and can simply
             # retrieved via ``RRef.local_value()``.
-            logps = model(inputs).local_value()
+            with timer(f'forward_epoch{epoch}_rank{rank}'):
+                logps = model(inputs).local_value()
             # need to send labels to device with stage 1
             loss = criterion(logps, labels)
             torch.cuda.synchronize()
             # start_time.record()
             iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
-            with timer(f'backward_epoch{epoch}_batch{batch_idx}_rank{rank}'):
+            with timer(f'backward_epoch{epoch}_rank{rank}'):
                 loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+            
             # stop_time.record()
             torch.cuda.synchronize()
             
@@ -193,16 +197,22 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
             # Since the Pipe is only within a single host and process the ``RRef``
             # returned by forward method is local to this node and can simply
             # retrieved via ``RRef.local_value()``.
-            logps = model(inputs).local_value()
+            
+            with timer(f'forward_epoch{epoch}_rank{rank}'):
+                logps = model(inputs).local_value()
+            
             # need to send labels to device with stage 1
             loss = criterion(logps, labels)
             torch.cuda.synchronize()
             # start_time.record()
             iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
-            with timer(f"backward_epoch{epoch}_batch{batch_idx}_rank{rank}"):
+            with timer(f"backward_rank{rank}"):
                 loss.backward()
-            with timer(f'randomk_epoch{epoch}_batch{batch_idx}_rank{rank}'):
+           
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+
+            with timer(f'randomk_rank{rank}'):
                 for index, (name, parameter) in enumerate(model.named_parameters()):
                     grad = parameter.grad.data
                     new_tensor = grc.step(grad, name)
@@ -275,11 +285,10 @@ def main(
     save_on_finish=False,
     data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
-    timer = Timer(skip_first=False, verbosity_level=0)
+    timer = Timer(skip_first=False)
 
     ## DATASET
     train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
-
 
     # We need to initialize the RPC framework with only a single worker since we're using a
     # single process to drive multiple GPUs.
@@ -347,16 +356,16 @@ def main(
         train_losses, val_losses = [], []
         
         for epoch in range(epochs):
-            with torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ]
-            ) as p:
-                train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
+            #with torch.profiler.profile(
+            #activities=[
+            #    torch.profiler.ProfilerActivity.CPU,
+            #    torch.profiler.ProfilerActivity.CUDA,
+            #]
+            #) as p:
+            train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
             
-            print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
-            p.export_chrome_trace(f"../../reports/raw_time_data/profiler/trace_epoch{epoch}_rank{rank}.json")
+            #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
+            #p.export_chrome_trace(f"../../reports/raw_time_data/profiler/trace_epoch{epoch}_rank{rank}.json")
             train_losses.append(train_loss/len(train_loader))
             
             avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
@@ -370,7 +379,7 @@ def main(
             scheduler.step()
 
     timer.save_summary(f"../../reports/raw_time_data/timer/rank{rank}_summary_{datetime.now()}.json", train_params)
-    
+    print(timer.summary()) 
 
     cleanup()
     
@@ -378,11 +387,11 @@ def main(
         torch.save(model.state_dict(), f'../../models/vgg16_{rank}.pth')
     
     print(f"Finished Training device {rank}")
-    if False:
-        plt.plot(train_losses, label='Training loss')
-        plt.plot(val_losses, label='Validation loss')
-        plt.legend(frameon=False)
-        plt.show()
+    #if False:
+        #plt.plot(train_losses, label='Training loss')
+        #plt.plot(val_losses, label='Validation loss')
+        #plt.legend(frameon=False)
+        #plt.show()
 
 
 
