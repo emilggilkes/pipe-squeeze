@@ -138,7 +138,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     iterator = tqdm(train_loader)
     #print(len(train_loader))
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
-        for batch_idx, data in enumerate(tqdm(train_loader)):
+        for batch_idx, data in enumerate(iterator):
             iterator.set_postfix_str(f'RANK: {rank}')
             inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
             #print('n_batches:', len(inputs))
@@ -186,7 +186,7 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
     iterator = tqdm(train_loader)
     #print(len(train_loader))
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
-        for batch_idx, data in enumerate(tqdm(train_loader)):
+        for batch_idx, data in enumerate(iterator):
             iterator.set_postfix_str(f'RANK: {rank}')
             inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
             optimizer.zero_grad()
