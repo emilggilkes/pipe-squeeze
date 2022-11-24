@@ -24,6 +24,20 @@ class Stage0(torch.nn.Module):
         self.layer16 = torch.nn.Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
         self.layer17 = torch.nn.ReLU(inplace=True)
         self.layer18 = torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+        self.layer19 = torch.nn.Conv2d(256, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.layer20 = torch.nn.ReLU(inplace=True)
+        self.layer21 = torch.nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.layer22 = torch.nn.ReLU(inplace=True)
+        self.layer23 = torch.nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.layer24 = torch.nn.ReLU(inplace=True)
+        self.layer25 = torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+        self.layer26 = torch.nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.layer27 = torch.nn.ReLU(inplace=True)
+        self.layer28 = torch.nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.layer29 = torch.nn.ReLU(inplace=True)
+        self.layer30 = torch.nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.layer31 = torch.nn.ReLU(inplace=True)
+        self.layer32 = torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
 
         self._initialize_weights()
 
@@ -46,7 +60,23 @@ class Stage0(torch.nn.Module):
         out16 = self.layer16(out15)
         out17 = self.layer17(out16)
         out18 = self.layer18(out17)
-        return out18
+        out19 = self.layer15(out18)
+        out20 = self.layer16(out19)
+        out21 = self.layer17(out20)
+        out22 = self.layer18(out21)
+        out23 = self.layer15(out22)
+        out24 = self.layer16(out23)
+        out25 = self.layer16(out24)
+        out26 = self.layer16(out25)
+        out27 = self.layer16(out26)
+        out28 = self.layer16(out27)
+        out29 = self.layer16(out28)
+        out30 = self.layer16(out29)
+        out31 = self.layer16(out30)
+        out32 = self.layer16(out31)
+
+
+        return out32
 
     def _initialize_weights(self):
         for m in self.modules():
@@ -60,3 +90,4 @@ class Stage0(torch.nn.Module):
             elif isinstance(m, torch.nn.Linear):
                 torch.nn.init.normal_(m.weight, 0, 0.01)
                 torch.nn.init.constant_(m.bias, 0)
+
