@@ -119,7 +119,6 @@ def val(model, val_loader, criterion, rank, epoch):
             inputs.detach()
             labels.detach()
             logps.detach()
-   # model.train()
 
     avg_val_loss = val_loss/len(val_loader)
     val_accuracy = accuracy/len(val_loader)
@@ -129,19 +128,14 @@ def val(model, val_loader, criterion, rank, epoch):
 def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     model.train()
     train_loss = 0
-    train_loader.sampler.set_epoch(epoch)
-    # start_time = torch.cuda.Event(enable_timing=True)
-    # stop_time = torch.cuda.Event(enable_timing=True)
-    # time_list = list()    
+    train_loader.sampler.set_epoch(epoch)   
     
     
     iterator = tqdm(train_loader)
-    #print(len(train_loader))
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(iterator):
             iterator.set_postfix_str(f'RANK: {rank}')
             inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
-            #print('n_batches:', len(inputs))
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
             # returned by forward method is local to this node and can simply
@@ -151,7 +145,6 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             # need to send labels to device with stage 1
             loss = criterion(logps, labels)
             torch.cuda.synchronize()
-            # start_time.record()
             iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             with timer(f'backward_epoch{epoch}_rank{rank}'):
@@ -159,18 +152,9 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             
-            # stop_time.record()
             torch.cuda.synchronize()
             
             optimizer.step()
-
-            # time_list.append(start_time.elapsed_time(stop_time))
-            
-            # data_dict = dict()
-            # data_dict['timing_log'] = time_list
-            # file_name = f"test_random_k_training_{rank}_{epoch}.json"
-            # with open(file_name, "w+") as fout:
-            #     json.dump(data_dict, fout)
 
             train_loss += loss.item()
             inputs.detach()
@@ -183,12 +167,9 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
-    # start_time = torch.cuda.Event(enable_timing=True)
-    # stop_time = torch.cuda.Event(enable_timing=True)
-    # time_list = list()    
+  
 
     iterator = tqdm(train_loader)
-    #print(len(train_loader))
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(iterator):
             iterator.set_postfix_str(f'RANK: {rank}')
@@ -210,7 +191,7 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
             with timer(f"backward_rank{rank}"):
                 loss.backward()
            
-            #torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
 
             with timer(f'randomk_rank{rank}'):
                 for index, (name, parameter) in enumerate(model.named_parameters()):
@@ -218,18 +199,10 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
                     new_tensor = grc.step(grad, name)
                     grad.copy_(new_tensor)
 
-            # stop_time.record()
             torch.cuda.synchronize()
             
             optimizer.step()
 
-            # time_list.append(start_time.elapsed_time(stop_time))
-            
-            # data_dict = dict()
-            # data_dict['timing_log'] = time_list
-            # file_name = f"test_random_k_training_{rank}_{epoch}.json"
-            # with open(file_name, "w+") as fout:
-            #     json.dump(data_dict, fout)
 
             train_loss += loss.item()
             inputs.detach()
@@ -237,22 +210,7 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
             logps.detach()
     return train_loss
 
-# class Compressor:
-#     def __init__(self, compression_type, compression_ratio=None):
-#         self.compression_type = compression_type
-#         self.compression_ratio = compression_ratio
 
-# class Trainer:
-#     def __init__(self, train_loader, val_loader, optimizer, criterion, compressor=None):
-#         self.train_loader = train_loader
-#         self.val_loader = val_loader
-#         self.optimizer = optimizer
-#         self.criterion = criterion
-#         self.compressor = compressor
-        
-#     def train_pipe_ddp(self):
-#         pass
-            
         
 def get_total_params(module: torch.nn.Module):
     total_params = 0
@@ -400,8 +358,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
    
-    #world_size = min(torch.cuda.device_count(), args.num_gpus)
-    #world_size = 2
     data_dir_path = DATA_DIR_MAP[args.data_set]
 
     print(f'Using device {device} with device count : {args.num_procs}')
