@@ -77,6 +77,9 @@ def create_data_loader(rank, world_size, batch_size, data_set_dirpath):
         raise Exception("Batch size must be a multiple of the number of workers")
 
     batch_size = batch_size // world_size
+
+    print(f"World size: {world_size}, setting effective batch size to {batch_size}. Should be batch size / num input gpus.")
+
     train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
     val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
 
@@ -128,9 +131,7 @@ def val(model, val_loader, criterion, rank, epoch):
 def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     model.train()
     train_loss = 0
-    train_loader.sampler.set_epoch(epoch)   
-    
-    
+    train_loader.sampler.set_epoch(epoch)
     iterator = tqdm(train_loader)
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(iterator):
@@ -142,11 +143,12 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             # retrieved via ``RRef.local_value()``.
             with timer(f'forward_epoch{epoch}_rank{rank}'):
                 logps = model(inputs).local_value()
+            
             # need to send labels to device with stage 1
             loss = criterion(logps, labels)
             torch.cuda.synchronize()
             iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
-            #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
+
             with timer(f'backward_epoch{epoch}_rank{rank}'):
                 loss.backward()
 
@@ -163,12 +165,11 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
         
     return train_loss
 
+
 def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
-  
-
     iterator = tqdm(train_loader)
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(iterator):
@@ -203,20 +204,21 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
             
             optimizer.step()
 
-
             train_loss += loss.item()
+
             inputs.detach()
             labels.detach()
             logps.detach()
+
     return train_loss
 
 
-        
 def get_total_params(module: torch.nn.Module):
     total_params = 0
     for param in module.parameters():
         total_params += param.numel()
     return total_params
+
 
 def record_train_params(rank, world_size, epochs, batch_size, learning_rate, momentum, weight_decay, scheduler_step_size, gamma):
     train_params = {}
@@ -231,6 +233,7 @@ def record_train_params(rank, world_size, epochs, batch_size, learning_rate, mom
     train_params['gamma'] = gamma
 
     return train_params
+
 
 def main(
     rank,
