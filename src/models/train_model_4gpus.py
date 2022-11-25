@@ -28,7 +28,7 @@ from grace_random_k import *
 
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
-IMAGENET_DATA_SET_PATH_PREFIX='../data/ImageNet'
+IMAGENET_DATA_SET_PATH_PREFIX='../../data/ImageNet'
 
 DATA_DIR_MAP = {
     'sample': SAMPLE_DATA_SET_PATH_PREFIX,
@@ -40,6 +40,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 def setup_argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', '--bs', help='Effective batch size. Will be divided by number of GPUs.', type=int, required=True)
+    parser.add_argument('--n-microbatches', '--mb', help ='Number of micro-batches', type=int, required = True)
     parser.add_argument('--learning-rate', '--lr', help='Learning rate', type=float, required=True)
     parser.add_argument('--num-procs', help='Number of processes to use', type=int, required=True)
     #parser.add_argument('--num-gpus', help='Number of GPUs to use', type=int, required=True)
@@ -240,6 +241,7 @@ def main(
     world_size,
     epochs = 2,
     batch_size = 1024,
+    n_microbatches = 8,
     learning_rate = 0.003,
     compression_type=None,
     compression_ratio=None,
@@ -265,7 +267,6 @@ def main(
 
     # build model pipeline
     model = nn.Sequential(stages)
-    n_microbatches = 8
     model = Pipe(model, chunks=n_microbatches, checkpoint="never")
     
     print ('Total parameters in model: {:,}'.format(get_total_params(model)))
@@ -364,7 +365,7 @@ if __name__ == "__main__":
     data_dir_path = DATA_DIR_MAP[args.data_set]
 
     print(f'Using device {device} with device count : {args.num_procs}')
-    print(f'Training params:\nEpochs: {args.epochs}\nBatch Size: {args.batch_size}\nLearning Rate: {args.learning_rate}')
+    print(f'Training params:\nEpochs: {args.epochs}\nBatch Size: {args.batch_size}\nLearning Rate: {args.learning_rate}\nNumber of Microbatches: {args.n_microbatches}')
     print(f'Compression Type: {args.compression_type}\nCompression Ratio: {args.compression_ratio}\nData dir path: {data_dir_path}')
 
     mp.spawn(
@@ -373,6 +374,7 @@ if __name__ == "__main__":
             args.num_procs,
             args.epochs,
             args.batch_size,
+	    args.n_microbatches,
             args.learning_rate,
             args.compression_type,
             args.compression_ratio,
