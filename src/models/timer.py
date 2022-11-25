@@ -103,8 +103,9 @@ class Timer:
             print("-----------------------------------------------------------------", file=buffer)
             return buffer.getvalue()
 
-    def save_summary(self, json_file_path):
+    def save_summary(self, json_file_path, train_params):
         data = {}
+        data['train_params'] = train_params
         for event_label in sorted(self.totals):
             total = self.totals[event_label]
             count = self.call_counts[event_label]

@@ -9,12 +9,7 @@ from collections import OrderedDict
 def arch():
     return "vgg16"
 
-def model(criterion):
-    # return [
-    #     (Stage0(), ["input0"], ["out0"]),
-    #     (Stage1(), ["out0"], ["out1"]),
-    #     (criterion, ["out1"], ["loss"])
-    # ]
+def model():
     names = ['stage0', 'stage1']
     stages = [
         Stage0(),
