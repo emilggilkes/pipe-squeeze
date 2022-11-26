@@ -260,7 +260,7 @@ def main(
         init_method="file://{}".format(tmpfile.name)))
 
     # create stages of the model
-    module = importlib.import_module("vgg16.gpus=4")
+    module = importlib.import_module("vgg16.gpus=4_pipedream")
     stages = module.model()
     stage = stages["stage0"].to(torch.device(device, 2*rank))    
     stage = stages["stage1"].to(torch.device(device, 2*rank+1))
