@@ -84,7 +84,7 @@ def create_data_loader(rank, world_size, batch_size, data_set_dirpath):
     train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
     val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
 
-    train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)
+    train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
     val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)
 
     train_loader = DataLoader(
@@ -154,7 +154,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             with timer(f'backward_epoch{epoch}_rank{rank}'):
                 loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 2)
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), 2)
             
             #torch.cuda.synchronize()
             
