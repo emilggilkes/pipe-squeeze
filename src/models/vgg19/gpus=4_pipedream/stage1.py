@@ -25,13 +25,13 @@ class Stage1(torch.nn.Module):
         self.layer18 = torch.nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
         self.layer19 = torch.nn.ReLU(inplace=True)
         self.layer20 = torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
-        self.layer21 = torch.nn.Linear(in_features=25088, out_features=4096, bias=True)
-        self.layer22 = torch.nn.ReLU(inplace=True)
-        self.layer23 = torch.nn.Dropout(p=0.5)
-        self.layer24 = torch.nn.Linear(in_features=4096, out_features=4096, bias=True)
-        self.layer25 = torch.nn.ReLU(inplace=True)
-        self.layer26 = torch.nn.Dropout(p=0.5)
-        self.layer27 = torch.nn.Linear(in_features=4096, out_features=1000, bias=True)
+        self.layer23 = torch.nn.Linear(in_features=25088, out_features=4096, bias=True)
+        self.layer24 = torch.nn.ReLU(inplace=True)
+        self.layer25 = torch.nn.Dropout(p=0.5)
+        self.layer26 = torch.nn.Linear(in_features=4096, out_features=4096, bias=True)
+        self.layer27 = torch.nn.ReLU(inplace=True)
+        self.layer28 = torch.nn.Dropout(p=0.5)
+        self.layer29 = torch.nn.Linear(in_features=4096, out_features=1000, bias=True)
 
         self._initialize_weights()
 
@@ -51,18 +51,20 @@ class Stage1(torch.nn.Module):
         out14 = self.layer14(out13)
         out15 = self.layer15(out14)
         out16 = self.layer16(out15)
-        out17 = out16.size(0)
-        out18 = out16.view(out17, -1)
+        out17 = self.layer17(out16)
+        out18 = self.layer18(out17)
         out19 = self.layer19(out18)
         out20 = self.layer20(out19)
-        out21 = self.layer21(out20)
-        out22 = self.layer22(out21)
+        out21 = out20.size(0)
+        out22 = out20.view(out21, -1)
         out23 = self.layer23(out22)
         out24 = self.layer24(out23)
-        out25 = self.layer25(out24)
+        out25 = self.layer24(out24)
         out26 = self.layer26(out25)
         out27 = self.layer27(out26)
-        return out27
+        out28 = self.layer28(out27)
+        out29 = self.layer29(out28)
+        return out29
 
     def _initialize_weights(self):
         for m in self.modules():
