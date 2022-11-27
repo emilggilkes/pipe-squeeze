@@ -133,11 +133,12 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
-    iterator = tqdm(train_loader)
+    #iterator = tqdm(train_loader)
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
-        for batch_idx, data in enumerate(iterator):
-            iterator.set_postfix_str(f'RANK: {rank}')
-            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
+        for inputs, labels in tqdm(train_loader):#enumerate(iterator):
+            #iterator.set_postfix_str(f'RANK: {rank}')
+            #inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
+            inputs, labels = inputs.to(torch.device(device,2*rank)), labels.to(torch.device(device, 2*rank+1))
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
             # returned by forward method is local to this node and can simply
@@ -147,15 +148,15 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             
             # need to send labels to device with stage 1
             loss = criterion(logps, labels)
-            torch.cuda.synchronize()
-            iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
+            #torch.cuda.synchronize()
+            #iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
 
             with timer(f'backward_epoch{epoch}_rank{rank}'):
                 loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 2)
             
-            torch.cuda.synchronize()
+            #torch.cuda.synchronize()
             
             optimizer.step()
 
@@ -260,7 +261,7 @@ def main(
         init_method="file://{}".format(tmpfile.name)))
 
     # create stages of the model
-    module = importlib.import_module("vgg16.gpus=4_pipedream")
+    module = importlib.import_module("vgg19.gpus=4_pipedream")
     stages = module.model()
     stage = stages["stage0"].to(torch.device(device, 2*rank))    
     stage = stages["stage1"].to(torch.device(device, 2*rank+1))
