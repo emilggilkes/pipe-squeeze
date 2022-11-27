@@ -59,7 +59,7 @@ class Stage1(torch.nn.Module):
         out22 = out20.view(out21, -1)
         out23 = self.layer23(out22)
         out24 = self.layer24(out23)
-        out25 = self.layer24(out24)
+        out25 = self.layer25(out24)
         out26 = self.layer26(out25)
         out27 = self.layer27(out26)
         out28 = self.layer28(out27)
