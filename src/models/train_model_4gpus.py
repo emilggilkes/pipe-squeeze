@@ -275,14 +275,15 @@ def main(
     
     # setup data parallelism
     setup_ddp(rank, world_size)
-    model = DDP(model)
+    if compression_type != 'randomk':
+        model = DDP(model)
 
     # define train settings
     criterion = nn.CrossEntropyLoss()
     momentum = 0.9
     weight_decay = 0.0001
     optimizer = optim.SGD(model.parameters(), lr = learning_rate, momentum=momentum, weight_decay=weight_decay)
-    step_size = 50
+    step_size = 30
     gamma = 0.9
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     
