@@ -134,12 +134,9 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
-    #iterator = tqdm(train_loader)
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
-        for inputs, labels in tqdm(train_loader):#enumerate(iterator):
-            #iterator.set_postfix_str(f'RANK: {rank}')
-            #inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
-            inputs, labels = inputs.to(torch.device(device,2*rank)), labels.to(torch.device(device, 2*rank+1))
+        for batch_idx, data in enumerate(tqdm(train_loader)):
+            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
             # returned by forward method is local to this node and can simply
@@ -149,16 +146,11 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
             
             # need to send labels to device with stage 1
             loss = criterion(logps, labels)
-            #torch.cuda.synchronize()
-            #iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
 
             with timer(f'backward_epoch{epoch}_rank{rank}'):
                 loss.backward()
 
-            #torch.nn.utils.clip_grad_norm_(model.parameters(), 2)
-            
-            #torch.cuda.synchronize()
-            
+                    
             optimizer.step()
 
             train_loss += loss.item()
@@ -173,10 +165,8 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
-    iterator = tqdm(train_loader)
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
-        for batch_idx, data in enumerate(iterator):
-            iterator.set_postfix_str(f'RANK: {rank}')
+        for batch_idx, data in enumerate(tqdm(train_loader)):
             inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
@@ -188,14 +178,11 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
             
             # need to send labels to device with stage 1
             loss = criterion(logps, labels)
-            torch.cuda.synchronize()
             # start_time.record()
-            iterator.set_postfix_str(iterator.postfix + f' | LOSS: {loss.item():.4f}')
             #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
             with timer(f"backward_rank{rank}"):
                 loss.backward()
            
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
 
             with timer(f'randomk_rank{rank}'):
                 for index, (name, parameter) in enumerate(model.named_parameters()):
@@ -203,7 +190,6 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
                     new_tensor = grc.step(grad, name)
                     grad.copy_(new_tensor)
 
-            torch.cuda.synchronize()
             
             optimizer.step()
 
@@ -288,7 +274,7 @@ def main(
     momentum = 0.9
     weight_decay = 0.0001
     optimizer = optim.SGD(model.parameters(), lr = learning_rate, momentum=momentum, weight_decay=weight_decay)
-    step_size = 30
+    step_size = 50
     gamma = 0.9
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     
@@ -350,7 +336,7 @@ def main(
     timer.save_summary(f"../../reports/raw_time_data/timer/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json", train_params)
     print(timer.summary()) 
     performance_df = pd.DataFrame({'train_loss': train_losses, 'val_loss': val_losses, 'val_accuracy': val_accuracies})
-    performance_df.to_csv(f"../../reports/model_performance_data/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json")
+    performance_df.to_csv(f"../../reports/model_metrics/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json")
     
     cleanup()
     
