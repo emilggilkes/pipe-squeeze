@@ -265,9 +265,8 @@ def main(
     setup_ddp(rank, world_size)
     if compression_type != 'randomk':
         model = DDP(model)
-
-    all_reduce_wrapper = TimedARWrapper(timer)
-    model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
+        all_reduce_wrapper = TimedARWrapper(timer)
+        model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
 
     # define train settings
     criterion = nn.CrossEntropyLoss()
