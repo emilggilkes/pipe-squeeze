@@ -321,15 +321,15 @@ def main(
         train_losses, val_losses = [], []
         
         for epoch in range(epochs):
-            with torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ]
-            ) as p:
-                train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
+            #with torch.profiler.profile(
+            #activities=[
+            #    torch.profiler.ProfilerActivity.CPU,
+            #    torch.profiler.ProfilerActivity.CUDA,
+            #]
+            #) as p:
+            train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
             
-            print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
+            #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
             #p.export_chrome_trace(f"../../reports/raw_time_data/profiler/trace_epoch{epoch}_rank{rank}.json")
             train_losses.append(train_loss/len(train_loader))
             
