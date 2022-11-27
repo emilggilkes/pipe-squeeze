@@ -8,6 +8,7 @@ import importlib
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+import pandas as pd
 import torch
 import torch.distributed as dist
 from torch import nn, optim
@@ -318,7 +319,8 @@ def main(
             scheduler.step()
     else:
         print(f"Start Training device {rank}")
-        train_losses, val_losses = [], []
+        train_losses, val_losses, val_accuracies = [], [], []
+        
         
         for epoch in range(epochs):
             #with torch.profiler.profile(
@@ -335,7 +337,7 @@ def main(
             
             avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
             val_losses.append(avg_val_loss)
-
+            val_accuracies.append(val_accuracy)
             print(f"Epoch {epoch+1}/{epochs}   "
                     f"Device {rank}   "
                     f"Train loss: {train_loss/len(train_loader):.3f}   "
@@ -343,9 +345,11 @@ def main(
                     f"Validation accuracy: {val_accuracy:.3f}")
             scheduler.step()
 
-    timer.save_summary(f"../../reports/raw_time_data/timer/rank{rank}_summary_{datetime.now()}.json", train_params)
+    timer.save_summary(f"../../reports/raw_time_data/timer/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json", train_params)
     print(timer.summary()) 
-
+    performance_df = pd.DataFrame({'train_loss': train_losses, 'val_loss': val_losses, 'val_accuracy': val_accuracies})
+    performance_df.to_csv(f"../../reports/model_performance_data/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json")
+    
     cleanup()
     
     if save_on_finish:
