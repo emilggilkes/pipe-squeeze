@@ -288,7 +288,7 @@ def main(
     # if using random k compression, can't use profiler and need to use train_grace() for training
     if compression_type == 'randomk':
         grc = Allreduce(RandomKCompressor(compression_ratio), NoneMemory(), world_size)
-        train_losses, val_losses = [], []
+        train_losses, val_losses, val_accuracies = [], [], []
         print(f"Start Training device {rank}")
         for epoch in range(epochs):
             train_loss = train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer,grc)
@@ -297,7 +297,8 @@ def main(
         
             avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
             val_losses.append(avg_val_loss)
-
+            val_accuracies.append(val_accuracy)
+            
             print(f"Epoch {epoch+1}/{epochs}   "
                     f"Device {rank}   "
                     f"Train loss: {train_loss/len(train_loader):.3f}   "
