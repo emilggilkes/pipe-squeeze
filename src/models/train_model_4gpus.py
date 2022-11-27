@@ -24,7 +24,7 @@ import torch.multiprocessing as mp
 #from random_k_reducer import RandomKReducer
 from timer import Timer
 from grace_random_k import *
-
+from all_reduce_timed import TimedARWrapper
 
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
@@ -278,6 +278,9 @@ def main(
     if compression_type != 'randomk':
         model = DDP(model)
 
+    all_reduce_wrapper = TimedARWrapper(timer)
+    model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
+
     # define train settings
     criterion = nn.CrossEntropyLoss()
     momentum = 0.9
@@ -327,7 +330,7 @@ def main(
             #) as p:
             train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
             
-            #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=7))
+            #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
             #p.export_chrome_trace(f"../../reports/raw_time_data/profiler/trace_epoch{epoch}_rank{rank}.json")
             train_losses.append(train_loss/len(train_loader))
             
