@@ -336,7 +336,7 @@ def main(
     timer.save_summary(f"../../reports/raw_time_data/timer/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json", train_params)
     print(timer.summary()) 
     performance_df = pd.DataFrame({'train_loss': train_losses, 'val_loss': val_losses, 'val_accuracy': val_accuracies})
-    performance_df.to_csv(f"../../reports/model_metrics/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json")
+    performance_df.to_csv(f"../../reports/model_metrics/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.csv")
     
     cleanup()
     
