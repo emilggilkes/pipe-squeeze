@@ -182,7 +182,7 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
                 loss = criterion(logps, labels)
                 # start_time.record()
                 #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
-                with timer(f"backward_rank{rank}"):
+                with timer(f'backward_epoch{epoch}_rank{rank}'):
                     loss.backward()
 
                 with timer(f'randomk_rank{rank}'):
@@ -288,7 +288,7 @@ def main(
 
     # if using random k compression, can't use profiler and need to use train_grace() for training
     if compression_type == 'randomk':
-        grc = Allreduce(RandomKCompressor(compression_ratio), NoneMemory(), world_size)
+        grc = Allreduce(RandomKCompressor(compression_ratio, timer=timer), NoneMemory(), world_size, timer=timer)
         train_losses, val_losses, val_accuracies = [], [], []
         print(f"Start Training device {rank}")
         with timer('total_train_time.randomk'):

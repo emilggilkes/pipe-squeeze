@@ -2,6 +2,8 @@ import torch
 from torch import distributed as dist
 from abc import ABC, abstractmethod
 
+from timer import Timer
+
 
 class Memory(ABC):
     @abstractmethod
@@ -41,16 +43,27 @@ class Communicator(ABC):
     def send_receive(self, tensors, name, ctx):
         raise NotImplemented("send was not implemented.")
 
-    def __init__(self, compressor, memory, world_size):
+    def __init__(self, compressor, memory, world_size, timer):
         self.compressor = compressor
         self.memory = memory
         self.world_size = world_size
+        self.timer = timer
 
     def step(self, tensor, name):
-        tensor = self.memory.compensate(tensor, name)
-        tensors_compressed, ctx = self.compressor.compress(tensor, name)
-        self.memory.update(tensor, name, self.compressor, tensors_compressed, ctx)
-        return self.send_receive(tensors_compressed, name, ctx)
+        with self.timer('communicator_step.compensate'):
+            tensor = self.memory.compensate(tensor, name)
+        
+        with self.timer('compressor.compress'):
+            tensors_compressed, ctx = self.compressor.compress(tensor, name)
+        
+        with self.timer('communicator.memory_update'):
+            self.memory.update(tensor, name, self.compressor, tensors_compressed, ctx)
+        
+        with self.timer('communicator.send_receive'):
+            r = self.send_receive(tensors_compressed, name, ctx)
+        
+        return r
+
 
 def sparsify(tensor, compress_ratio):
     tensor = tensor.flatten()
@@ -65,11 +78,12 @@ def sparsify(tensor, compress_ratio):
 class RandomKCompressor:
     """Python libraries Based Compress by performing sparsification (i.e., sending a ratio of the actual tensor size."""
 
-    def __init__(self, compress_ratio, average=True):
+    def __init__(self, compress_ratio, timer, average=True):
         super().__init__()
         self.global_step = 0
         self.compress_ratio = compress_ratio
         self.average = average
+        self.timer = timer
 
     def compress(self, tensor, name):
         """Use Python Random libraries RNG to compress by generating a list of indices to be transmitted."""
@@ -77,25 +91,29 @@ class RandomKCompressor:
         h = sum(bytes(name, encoding='utf8'), self.global_step)
         self.global_step += 1
         torch.manual_seed(h)
-        indices, values = sparsify(tensor, self.compress_ratio)
+        
+        with self.timer('randomk.sparsify'):
+            indices, values = sparsify(tensor, self.compress_ratio)
 
         ctx = indices, tensor.numel(), tensor.size()
         return [values], ctx
 
     def decompress(self, tensors, ctx):
         """Decompress by filling empty slots with zeros and reshape back using the original shape"""
-        indices, numel, shape = ctx
-        values, = tensors
-        tensor_decompressed = torch.zeros(numel, dtype=values.dtype, layout=values.layout, device=values.device)
-        tensor_decompressed.scatter_(0, indices, values)
-        return tensor_decompressed.view(shape)
+        with self.timer('randomk.decompress'):
+            indices, numel, shape = ctx
+            values, = tensors
+            tensor_decompressed = torch.zeros(numel, dtype=values.dtype, layout=values.layout, device=values.device)
+            tensor_decompressed.scatter_(0, indices, values)
+            return tensor_decompressed.view(shape)
 
 
 class Allreduce(Communicator):
 
     def send_receive(self, tensors, name, ctx):
         for tensor_compressed in tensors:
-            dist.all_reduce(tensor_compressed)
+            with self.timer('send_receive.all_reduce'):
+                dist.all_reduce(tensor_compressed)
             if self.compressor.average:
                 tensor_compressed.div_(self.world_size)
         return self.compressor.decompress(tensors, ctx)
