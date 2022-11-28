@@ -72,14 +72,14 @@ class Timer:
             self.totals[label] += end - start
             self.call_counts[label] += 1
 
-        if self.call_counts[label] > 0:
+        #if self.call_counts[label] > 0:
             # We will reduce the probability of logging a timing linearly with the number of times
             # we have seen it.
             # It will always be recorded in the totals, though
-            if np.random.rand() < 1 / self.call_counts[label]:
-                self.log_fn(
-                    "timer", {"epoch": float(epoch), "value": end - start}, {"event": label}
-                )
+        #    if np.random.rand() < 1 / self.call_counts[label]:
+        #        self.log_fn(
+        #            "timer", {"epoch": float(epoch), "value": end - start}, {"event": label}
+        #        )
 
     def summary(self):
         """
