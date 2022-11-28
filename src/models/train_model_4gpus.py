@@ -147,7 +147,10 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
                 # returned by forward method is local to this node and can simply
                 # retrieved via ``RRef.local_value()``.
                 with timer(f'forward_epoch{epoch}_rank{rank}'):
-                    logps = model(inputs).local_value()
+                    logps = model(inputs)
+                    
+                with timer(f'Local value rank {rank}'):
+                    logps = logps.local_value()
                 
                 # need to send labels to device with stage 1
                 loss = criterion(logps, labels)
@@ -180,7 +183,10 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
                 # retrieved via ``RRef.local_value()``.
                 print(f'Rank {rank} inputs shape: {inputs.shape} labels shape: {labels.shape}')
                 with timer(f'forward_epoch{epoch}_rank{rank}'):
-                    logps = model(inputs).local_value()
+                    logps = model(inputs)
+
+                with timer(f'Local value rank {rank}'):
+                    logps = logps.local_value()
                 
                 # need to send labels to device with stage 1
                 loss = criterion(logps, labels)
