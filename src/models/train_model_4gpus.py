@@ -20,6 +20,8 @@ from torch.distributed.pipeline.sync import Pipe
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compress_hook, bf16_compress_hook
 
+from torch.distributed.distributed_c10d import get_world_size
+
 import torch.multiprocessing as mp
 
 #from random_k_reducer import RandomKReducer
@@ -61,6 +63,8 @@ def setup_ddp(rank, world_size):
 
     dist.init_process_group(backend="gloo", rank = rank, world_size = world_size)
     print(f"Initiated Process Group with rank = {rank} and world_size = {world_size}")
+
+    print(f'Get world size: {get_world_size()}')
 
 def cleanup():
     dist.destroy_process_group()
