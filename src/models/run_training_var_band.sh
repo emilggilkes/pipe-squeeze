@@ -17,10 +17,10 @@
 
 source activate pytorch
 
-sudo tc qdisc add dev ens3 root tbf rate 10gbit latency 50ms burst 10MB
-python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 50 --num-procs 2 --data-set ImageNet --log-file-prefix
+# sudo tc qdisc add dev ens3 root tbf rate 10gbit latency 50ms burst 10MB
+# python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 50 --num-procs 4 --data-set ImageNet --log-file-prefix
 
-sudo tc qdisc del dev ens3 root tbf rate 10gbit latency 50ms burst 10MB
+# sudo tc qdisc del dev ens3 root tbf rate 10gbit latency 50ms burst 10MB
 sudo tc qdisc add dev ens3 root tbf rate 10gbit latency 50ms burst 10MB
 python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 2 --num-procs 2 --data-set ImageNet --log-file-prefix 2-2-10gbit
 
