@@ -51,6 +51,7 @@ def setup_argparser():
     parser.add_argument('--data-set', help='Whether to use the small sample dataset or Imagenette dataset', type=str, default='sample')
     parser.add_argument('--save-on-finish', help='Saves model weights upon training completion', type=bool, default=False)
     parser.add_argument('--epochs', help='Number of epochs to train for', type=int, default=2)
+    parser.add_argument('--log-file-prefix', help='Prefix of the log file', type=str, default='')
     return parser
 
 
@@ -235,6 +236,7 @@ def main(
     compression_ratio=None,
     save_on_finish=False,
     data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
+    log_file_prefix='',
 ):
     timer = Timer(skip_first=False)
 
@@ -333,15 +335,15 @@ def main(
                     f"Validation accuracy: {val_accuracy:.3f}")
             scheduler.step()
 
-    timer.save_summary(f"../../reports/raw_time_data/timer/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json", train_params)
+    timer.save_summary(f"../../reports/raw_time_data/timer/{log_file_prefix}rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json", train_params)
     print(timer.summary()) 
     performance_df = pd.DataFrame({'train_loss': train_losses, 'val_loss': val_losses, 'val_accuracy': val_accuracies})
-    performance_df.to_csv(f"../../reports/model_metrics/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.csv")
+    performance_df.to_csv(f"../../reports/model_metrics/{log_file_prefix}rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.csv")
     
     cleanup()
     
     if save_on_finish:
-        torch.save(model.state_dict(), f'../../models/vgg16_{rank}.pth')
+        torch.save(model.state_dict(), f'../../models/{log_file_prefix}vgg16_{rank}.pth')
     
     print(f"Finished Training device {rank}")
     #if False:
@@ -349,7 +351,6 @@ def main(
         #plt.plot(val_losses, label='Validation loss')
         #plt.legend(frameon=False)
         #plt.show()
-
 
 
 if __name__ == "__main__":
@@ -369,12 +370,13 @@ if __name__ == "__main__":
             args.num_procs,
             args.epochs,
             args.batch_size,
-	    args.n_microbatches,
+	        args.n_microbatches,
             args.learning_rate,
             args.compression_type,
             args.compression_ratio,
             args.save_on_finish,
             data_dir_path,
+            args.log_file_prefix,
         ),
         nprocs=args.num_procs,
         join=True,
