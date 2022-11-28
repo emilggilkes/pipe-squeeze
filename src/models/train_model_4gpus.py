@@ -211,7 +211,8 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
                 # test that all reduce is working across ranks!
                 params = list(model.named_parameters())
                 name, parameter = params[10]
-                print(f'Rank {rank}\nParameter: {parameter}')
+                print(f'Rank {rank}\nName: {name}\nParameter: {parameter}')
+                print()
 
                 train_loss += loss.item()
 
