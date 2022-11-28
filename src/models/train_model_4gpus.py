@@ -208,6 +208,11 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
     
                 optimizer.step()
 
+                # test that all reduce is working across ranks!
+                params = list(model.named_parameters())
+                name, parameter = params[10]
+                print(f'Rank {rank}, Param Name: {name}\nparameter: {parameter.data}\n{parameter}')
+
                 train_loss += loss.item()
 
                 inputs.detach()
@@ -279,8 +284,8 @@ def main(
     
     # setup data parallelism
     setup_ddp(rank, world_size)
-    model = DDP(model)
     if compression_type != 'randomk':
+        model = DDP(model)
         all_reduce_wrapper = TimedARWrapper(timer)
         model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
 
