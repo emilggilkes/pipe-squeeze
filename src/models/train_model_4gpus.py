@@ -138,7 +138,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(tqdm(train_loader)):
             with timer(f'batch_train_time'):
-                print(f'Rank {rank} data shape {data.shape}')
+                print(f'Rank {rank} data {len(data)}')
                 inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
                 optimizer.zero_grad()
 
@@ -177,7 +177,7 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
             with timer('batch_train_time'):
                 inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
                 optimizer.zero_grad()
-                print(f'Rank {rank} data shape {data.shape}')
+                print(f'Rank {rank} data {len(data)}')
                 # Since the Pipe is only within a single host and process the ``RRef``
                 # returned by forward method is local to this node and can simply
                 # retrieved via ``RRef.local_value()``.
