@@ -42,15 +42,15 @@ python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 2 --num-procs 2 -
 
 sudo tc qdisc del dev ens3 root tbf rate 10gbit latency 50ms burst 10MB
 sudo tc qdisc add dev ens3 root tbf rate 1gbit latency 50ms burst 10MB
-python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 2 --num-procs 2 --data-set ImageNet --compression-type randomk --compression-ratio 0.3 --log-file-prefix 2-2-10gbit-rand30
+python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 2 --num-procs 2 --data-set ImageNet --compression-type randomk --compression-ratio 0.3 --log-file-prefix 2-2-1gbit-rand30
 
 sudo tc qdisc del dev ens3 root tbf rate 1gbit latency 50ms burst 10MB
 sudo tc qdisc add dev ens3 root tbf rate 1gbit latency 50ms burst 10MB
-python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 2 --num-procs 2 --data-set ImageNet --compression-type randomk --compression-ratio 0.5 --log-file-prefix 2-2-10gbit-rand50
+python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 2 --num-procs 2 --data-set ImageNet --compression-type randomk --compression-ratio 0.5 --log-file-prefix 2-2-1gbit-rand50
 
 sudo tc qdisc del dev ens3 root tbf rate 1gbit latency 50ms burst 10MB
 sudo tc qdisc add dev ens3 root tbf rate 1gbit latency 50ms burst 10MB
-python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 2 --num-procs 2 --data-set ImageNet --compression-type randomk --compression-ratio 0.8 --log-file-prefix 2-2-10gbit-rand80
+python train_model_4gpus.py --lr 0.003 --bs 32 --mb 4 --epochs 2 --num-procs 2 --data-set ImageNet --compression-type randomk --compression-ratio 0.8 --log-file-prefix 2-2-1gbit-rand80
 
 sudo tc qdisc del dev ens3 root tbf rate 1gbit latency 50ms burst 10MB
 
