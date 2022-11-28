@@ -162,6 +162,12 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
                         
                 optimizer.step()
 
+                # test that all reduce is working across ranks!
+                params = list(model.named_parameters())
+                name, parameter = params[10]
+                print(f'Rank {rank}\nEpoch {epoch}\nBatch idx{batch_idx}\nName: {name}\nParameter: {parameter}')
+                print()
+
                 train_loss += loss.item()
                 inputs.detach()
                 labels.detach()
