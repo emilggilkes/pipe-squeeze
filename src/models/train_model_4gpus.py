@@ -132,6 +132,7 @@ def val(model, val_loader, criterion, rank, epoch):
 
 
 def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
+    print(f'Rank {rank} model {model}')
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
@@ -169,6 +170,7 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
 
 
 def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
+    print(f'Rank {rank} model {model}')
     model.train()
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
