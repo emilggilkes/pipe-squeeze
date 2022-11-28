@@ -137,27 +137,27 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     train_loader.sampler.set_epoch(epoch)
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(tqdm(train_loader)):
-            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
-            optimizer.zero_grad()
-            # Since the Pipe is only within a single host and process the ``RRef``
-            # returned by forward method is local to this node and can simply
-            # retrieved via ``RRef.local_value()``.
-            with timer(f'forward_epoch{epoch}_rank{rank}'):
-                logps = model(inputs).local_value()
-            
-            # need to send labels to device with stage 1
-            loss = criterion(logps, labels)
+            with timer(f'batch_train_time'):
+                inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
+                optimizer.zero_grad()
+                # Since the Pipe is only within a single host and process the ``RRef``
+                # returned by forward method is local to this node and can simply
+                # retrieved via ``RRef.local_value()``.
+                with timer(f'forward_epoch{epoch}_rank{rank}'):
+                    logps = model(inputs).local_value()
+                
+                # need to send labels to device with stage 1
+                loss = criterion(logps, labels)
 
-            with timer(f'backward_epoch{epoch}_rank{rank}'):
-                loss.backward()
+                with timer(f'backward_epoch{epoch}_rank{rank}'):
+                    loss.backward()
+                        
+                optimizer.step()
 
-                    
-            optimizer.step()
-
-            train_loss += loss.item()
-            inputs.detach()
-            labels.detach()
-            logps.detach()
+                train_loss += loss.item()
+                inputs.detach()
+                labels.detach()
+                logps.detach()
         
     return train_loss
 
@@ -168,37 +168,36 @@ def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, g
     train_loader.sampler.set_epoch(epoch)
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
         for batch_idx, data in enumerate(tqdm(train_loader)):
-            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
-            optimizer.zero_grad()
-            # Since the Pipe is only within a single host and process the ``RRef``
-            # returned by forward method is local to this node and can simply
-            # retrieved via ``RRef.local_value()``.
-            
-            with timer(f'forward_epoch{epoch}_rank{rank}'):
-                logps = model(inputs).local_value()
-            
-            # need to send labels to device with stage 1
-            loss = criterion(logps, labels)
-            # start_time.record()
-            #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
-            with timer(f"backward_rank{rank}"):
-                loss.backward()
-           
+            with timer('batch_train_time'):
+                inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
+                optimizer.zero_grad()
+                # Since the Pipe is only within a single host and process the ``RRef``
+                # returned by forward method is local to this node and can simply
+                # retrieved via ``RRef.local_value()``.
+                
+                with timer(f'forward_epoch{epoch}_rank{rank}'):
+                    logps = model(inputs).local_value()
+                
+                # need to send labels to device with stage 1
+                loss = criterion(logps, labels)
+                # start_time.record()
+                #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
+                with timer(f"backward_rank{rank}"):
+                    loss.backward()
 
-            with timer(f'randomk_rank{rank}'):
-                for index, (name, parameter) in enumerate(model.named_parameters()):
-                    grad = parameter.grad.data
-                    new_tensor = grc.step(grad, name)
-                    grad.copy_(new_tensor)
+                with timer(f'randomk_rank{rank}'):
+                    for index, (name, parameter) in enumerate(model.named_parameters()):
+                        grad = parameter.grad.data
+                        new_tensor = grc.step(grad, name)
+                        grad.copy_(new_tensor)
+    
+                optimizer.step()
 
-            
-            optimizer.step()
+                train_loss += loss.item()
 
-            train_loss += loss.item()
-
-            inputs.detach()
-            labels.detach()
-            logps.detach()
+                inputs.detach()
+                labels.detach()
+                logps.detach()
 
     return train_loss
 
@@ -292,48 +291,49 @@ def main(
         grc = Allreduce(RandomKCompressor(compression_ratio), NoneMemory(), world_size)
         train_losses, val_losses, val_accuracies = [], [], []
         print(f"Start Training device {rank}")
-        for epoch in range(epochs):
-            train_loss = train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer,grc)
+        with timer('total_train_time.randomk'):
+            for epoch in range(epochs):
+                train_loss = train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer,grc)
 
-            train_losses.append(train_loss/len(train_loader))
-        
-            avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
-            val_losses.append(avg_val_loss)
-            val_accuracies.append(val_accuracy)
+                train_losses.append(train_loss/len(train_loader))
             
-            print(f"Epoch {epoch+1}/{epochs}   "
-                    f"Device {rank}   "
-                    f"Train loss: {train_loss/len(train_loader):.3f}   "
-                    f"Validation loss: {avg_val_loss:.3f}   "
-                    f"Validation accuracy: {val_accuracy:.3f}")
-            scheduler.step()
+                avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
+                val_losses.append(avg_val_loss)
+                val_accuracies.append(val_accuracy)
+                
+                print(f"Epoch {epoch+1}/{epochs}   "
+                        f"Device {rank}   "
+                        f"Train loss: {train_loss/len(train_loader):.3f}   "
+                        f"Validation loss: {avg_val_loss:.3f}   "
+                        f"Validation accuracy: {val_accuracy:.3f}")
+                scheduler.step()
     else:
         print(f"Start Training device {rank}")
         train_losses, val_losses, val_accuracies = [], [], []
         
-        
-        for epoch in range(epochs):
-            #with torch.profiler.profile(
-            #activities=[
-            #    torch.profiler.ProfilerActivity.CPU,
-            #    torch.profiler.ProfilerActivity.CUDA,
-            #]
-            #) as p:
-            train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
-            
-            #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
-            #p.export_chrome_trace(f"../../reports/raw_time_data/profiler/trace_epoch{epoch}_rank{rank}.json")
-            train_losses.append(train_loss/len(train_loader))
-            
-            avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
-            val_losses.append(avg_val_loss)
-            val_accuracies.append(val_accuracy)
-            print(f"Epoch {epoch+1}/{epochs}   "
-                    f"Device {rank}   "
-                    f"Train loss: {train_loss/len(train_loader):.3f}   "
-                    f"Validation loss: {avg_val_loss:.3f}   "
-                    f"Validation accuracy: {val_accuracy:.3f}")
-            scheduler.step()
+        with timer('total_train_time'):
+            for epoch in range(epochs):
+                #with torch.profiler.profile(
+                #activities=[
+                #    torch.profiler.ProfilerActivity.CPU,
+                #    torch.profiler.ProfilerActivity.CUDA,
+                #]
+                #) as p:
+                train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
+                
+                #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
+                #p.export_chrome_trace(f"../../reports/raw_time_data/profiler/trace_epoch{epoch}_rank{rank}.json")
+                train_losses.append(train_loss/len(train_loader))
+                
+                avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
+                val_losses.append(avg_val_loss)
+                val_accuracies.append(val_accuracy)
+                print(f"Epoch {epoch+1}/{epochs}   "
+                        f"Device {rank}   "
+                        f"Train loss: {train_loss/len(train_loader):.3f}   "
+                        f"Validation loss: {avg_val_loss:.3f}   "
+                        f"Validation accuracy: {val_accuracy:.3f}")
+                scheduler.step()
 
     timer.save_summary(f"../../reports/raw_time_data/timer/{log_file_prefix}rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json", train_params)
     print(timer.summary()) 
