@@ -29,7 +29,7 @@ from all_reduce_timed import TimedARWrapper
 
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
-IMAGENET_DATA_SET_PATH_PREFIX='../../data/ImageNet'
+IMAGENET_DATA_SET_PATH_PREFIX='../data/ImageNet'
 
 DATA_DIR_MAP = {
     'sample': SAMPLE_DATA_SET_PATH_PREFIX,
@@ -97,7 +97,7 @@ def create_data_loader(rank, world_size, batch_size, data_set_dirpath):
 
     val_loader = DataLoader(
         dataset=val_set,
-        batch_size = batch_size,
+        batch_size = 256,
         num_workers = world_size,
         sampler=val_sampler,
     )
@@ -273,7 +273,7 @@ def main(
     momentum = 0.9
     weight_decay = 0.0001
     optimizer = optim.SGD(model.parameters(), lr = learning_rate, momentum=momentum, weight_decay=weight_decay)
-    step_size = 50
+    step_size = 30
     gamma = 0.9
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
     
