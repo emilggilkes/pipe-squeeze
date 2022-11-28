@@ -285,8 +285,8 @@ def main(
     
     # setup data parallelism
     setup_ddp(rank, world_size)
+    model = DDP(model)
     if compression_type != 'randomk':
-        model = DDP(model)
         all_reduce_wrapper = TimedARWrapper(timer)
         model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
 
