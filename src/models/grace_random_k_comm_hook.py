@@ -89,11 +89,12 @@ class RandomKCompressor2(Compressor):
         print("########### COMPRESSED SHAPE:\n", compressed_tensor.size())
         def decompress(fut):
             print("IN DECOMPRESS")
+            print("bucket.buffer.size:", bucket.buffer().size())
             decompressed_tensor = bucket.buffer()
             # Decompress in place to reduce the peak memory.
             # See: https://github.com/pytorch/pytorch/issues/45968
+            print("fut.value()[0].size:", fut.value()[0].size())
             decompressed_tensor.copy_(fut.value()[0])
-            print("here1")
             indices, numel, shape = ctx
             #values = decompressed_tensor
             tensor_decompressed = torch.zeros(numel, dtype=decompressed_tensor.dtype, layout=decompressed_tensor.layout, device=decompressed_tensor.device)
