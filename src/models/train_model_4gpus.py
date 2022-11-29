@@ -24,8 +24,8 @@ import torch.multiprocessing as mp
 
 #from random_k_reducer import RandomKReducer
 from timer import Timer
-from grace_random_k import *
-from grace_random_k_comm_hook import RandomKCompressor2
+#from grace_random_k import *
+from grace_random_k_comm_hook import RandomKCompressor
 from all_reduce_timed import TimedARWrapper
 
 
@@ -136,70 +136,26 @@ def train(model, train_loader, optimizer, criterion, rank, epoch, timer):
     train_loss = 0
     train_loader.sampler.set_epoch(epoch)
     with timer(f'trainloop_epoch{epoch}_rank{rank}'):
-        for batch_idx, data in enumerate(tqdm(train_loader)):
-            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
+        for inputs, labels in tqdm(train_loader):
             optimizer.zero_grad()
             # Since the Pipe is only within a single host and process the ``RRef``
             # returned by forward method is local to this node and can simply
             # retrieved via ``RRef.local_value()``.
             with timer(f'forward_epoch{epoch}_rank{rank}'):
-                logps = model(inputs).local_value()
+                logps = model(inputs.to(torch.device(device,2*rank))).local_value()
             
             # need to send labels to device with stage 1
-            loss = criterion(logps, labels)
+            loss = criterion(logps, labels.to(torch.device(device, 2*rank+1)))
 
             with timer(f'backward_epoch{epoch}_rank{rank}'):
                 loss.backward()
-
                     
             optimizer.step()
-
             train_loss += loss.item()
             inputs.detach()
             labels.detach()
             logps.detach()
         
-    return train_loss
-
-
-def train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer, grc):
-    model.train()
-    train_loss = 0
-    train_loader.sampler.set_epoch(epoch)
-    with timer(f'trainloop_epoch{epoch}_rank{rank}'):
-        for batch_idx, data in enumerate(tqdm(train_loader)):
-            inputs, labels = data[0].to(torch.device(device,2*rank)), data[1].to(torch.device(device, 2*rank+1))
-            optimizer.zero_grad()
-            # Since the Pipe is only within a single host and process the ``RRef``
-            # returned by forward method is local to this node and can simply
-            # retrieved via ``RRef.local_value()``.
-            
-            with timer(f'forward_epoch{epoch}_rank{rank}'):
-                logps = model(inputs).local_value()
-            
-            # need to send labels to device with stage 1
-            loss = criterion(logps, labels)
-            # start_time.record()
-            #print(f'[RANK {rank}] epoch {epoch} loss = {loss.item():.4f}')
-            with timer(f"backward_rank{rank}"):
-                loss.backward()
-           
-
-            with timer(f'randomk_rank{rank}'):
-                for index, (name, parameter) in enumerate(model.named_parameters()):
-                    grad = parameter.grad.data
-                    new_tensor = grc.step(grad, name)
-                    grad.copy_(new_tensor)
-
-            
-            optimizer.step()
-
-            train_loss += loss.item()
-
-            inputs.detach()
-            labels.detach()
-            logps.detach()
-
     return train_loss
 
 
@@ -257,19 +213,26 @@ def main(
     # build model pipeline
     model = nn.Sequential(stages)
     model = Pipe(model, chunks=n_microbatches, checkpoint="never")
-    
     print ('Total parameters in model: {:,}'.format(get_total_params(model)))
     for i, stage in enumerate(model):
         print ('Total parameters in stage {}: {:,}'.format(i, get_total_params(stage)))
     
     # setup data parallelism
     setup_ddp(rank, world_size)
-    if compression_type != 'randomk':
-        model = DDP(model)
-        compressor = RandomKCompressor2(0.5)
+    model = DDP(model)
+
+    if compression_type == 'randomk':
+        compressor = RandomKCompressor(compression_ratio, timer)
         model.register_comm_hook(state=None, hook=compressor.random_k_compress_hook)
-        #all_reduce_wrapper = TimedARWrapper(timer)
-        #model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
+    else:
+        all_reduce_wrapper = TimedARWrapper(timer)
+        model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
+
+    # Add communication hook doing floating point compression
+    if compression_type == 'fp16':
+        model.register_comm_hook(state=None, hook=fp16_compress_hook)
+    elif compression_type == 'bf16':
+        model.register_comm_hook(state=None, hook=bf16_compress_hook)
 
     # define train settings
     criterion = nn.CrossEntropyLoss()
@@ -282,59 +245,24 @@ def main(
     
     train_params = record_train_params(rank, world_size, epochs, batch_size, learning_rate, momentum, weight_decay, step_size, gamma)
    
-    # Add communication hook doing floating point compression
-    if compression_type == 'fp16':
-        model.register_comm_hook(state=None, hook=fp16_compress_hook)
-    elif compression_type == 'bf16':
-        model.register_comm_hook(state=None, hook=bf16_compress_hook)
+    print(f"Start Training device {rank}")
+    train_losses, val_losses, val_accuracies = [], [], []
+    
+    for epoch in range(epochs):
+        train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
+        train_losses.append(train_loss/len(train_loader))
+        
+        avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
+        val_losses.append(avg_val_loss)
+        val_accuracies.append(val_accuracy)
+        
+        print(f"Epoch {epoch+1}/{epochs}   "
+                f"Device {rank}   "
+                f"Train loss: {train_loss/len(train_loader):.3f}   "
+                f"Validation loss: {avg_val_loss:.3f}   "
+                f"Validation accuracy: {val_accuracy:.3f}")
 
-    # if using random k compression, can't use profiler and need to use train_grace() for training
-    if compression_type == 'randomk':
-        grc = Allreduce(RandomKCompressor(compression_ratio), NoneMemory(), world_size)
-        train_losses, val_losses, val_accuracies = [], [], []
-        print(f"Start Training device {rank}")
-        for epoch in range(epochs):
-            train_loss = train_grace(model, train_loader, optimizer, criterion, rank, epoch, timer,grc)
-
-            train_losses.append(train_loss/len(train_loader))
-        
-            avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
-            val_losses.append(avg_val_loss)
-            val_accuracies.append(val_accuracy)
-            
-            print(f"Epoch {epoch+1}/{epochs}   "
-                    f"Device {rank}   "
-                    f"Train loss: {train_loss/len(train_loader):.3f}   "
-                    f"Validation loss: {avg_val_loss:.3f}   "
-                    f"Validation accuracy: {val_accuracy:.3f}")
-            scheduler.step()
-    else:
-        print(f"Start Training device {rank}")
-        train_losses, val_losses, val_accuracies = [], [], []
-        
-        
-        for epoch in range(epochs):
-            #with torch.profiler.profile(
-            #activities=[
-            #    torch.profiler.ProfilerActivity.CPU,
-            #    torch.profiler.ProfilerActivity.CUDA,
-            #]
-            #) as p:
-            train_loss = train(model, train_loader, optimizer, criterion, rank, epoch, timer)
-            
-            #print(p.key_averages().table(sort_by="self_cuda_time_total", row_limit=5))
-            #p.export_chrome_trace(f"../../reports/raw_time_data/profiler/trace_epoch{epoch}_rank{rank}.json")
-            train_losses.append(train_loss/len(train_loader))
-            
-            avg_val_loss, val_accuracy = val(model, val_loader, criterion, rank, epoch)
-            val_losses.append(avg_val_loss)
-            val_accuracies.append(val_accuracy)
-            print(f"Epoch {epoch+1}/{epochs}   "
-                    f"Device {rank}   "
-                    f"Train loss: {train_loss/len(train_loader):.3f}   "
-                    f"Validation loss: {avg_val_loss:.3f}   "
-                    f"Validation accuracy: {val_accuracy:.3f}")
-            scheduler.step()
+        scheduler.step()
 
     timer.save_summary(f"../../reports/raw_time_data/timer/rank{rank}_{n_microbatches}_{compression_type}_{compression_ratio}_{datetime.now()}.json", train_params)
     print(timer.summary()) 
@@ -347,12 +275,6 @@ def main(
         torch.save(model.state_dict(), f'../../models/vgg16_{rank}.pth')
     
     print(f"Finished Training device {rank}")
-    #if False:
-        #plt.plot(train_losses, label='Training loss')
-        #plt.plot(val_losses, label='Validation loss')
-        #plt.legend(frameon=False)
-        #plt.show()
-
 
 
 if __name__ == "__main__":
@@ -372,7 +294,7 @@ if __name__ == "__main__":
             args.num_procs,
             args.epochs,
             args.batch_size,
-	    args.n_microbatches,
+	        args.n_microbatches,
             args.learning_rate,
             args.compression_type,
             args.compression_ratio,
@@ -382,4 +304,3 @@ if __name__ == "__main__":
         nprocs=args.num_procs,
         join=True,
     )
-    #print(timer.summary())
