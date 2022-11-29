@@ -21,12 +21,12 @@ class Compressor(ABC):
         self.average = average
         self.tensors_size_are_same = tensors_size_are_same
 
-    @abstractmethod
+    #@abstractmethod
     def compress(self, tensor, name):
         """Compresses a tensor and returns it with the context needed to decompress it."""
         raise NotImplemented("compress was not implemented.")
 
-    @abstractmethod
+    #@abstractmethod
     def decompress(self, tensors, ctx):
         """Decompress the tensor with the given context."""
         raise NotImplemented("decompress was not implemented.")
@@ -37,7 +37,7 @@ class Compressor(ABC):
 
 
 class Communicator(ABC):
-    @abstractmethod
+    #@abstractmethod
     def send_receive(self, tensors, name, ctx):
         raise NotImplemented("send was not implemented.")
 
