@@ -61,7 +61,7 @@ def sparsify(tensor, compress_ratio):
     values = tensor[indices]
     return indices, values
 
-class RandomKCompressor2: 
+class RandomKCompressor2(Compressor): 
     def __init__(self, compress_ratio):
         super().__init__()
         self.global_step = 0
@@ -83,7 +83,7 @@ class RandomKCompressor2:
 
         ctx = indices, tensor.numel(), tensor.size()
         fut = dist.all_reduce(
-            compressed_tensor, group=group_to_use, async_op=True
+            compressed_tensor.div_(world_size), group=group_to_use, async_op=True
         ).get_future()
         
         print("########### COMPRESSED SHAPE:\n", compressed_tensor.size())
@@ -95,14 +95,12 @@ class RandomKCompressor2:
             decompressed_tensor.copy_(fut.value()[0])
             print("here1")
             indices, numel, shape = ctx
-            values, = decompressed_tensor
-            tensor_decompressed = torch.zeros(numel, dtype=values.dtype, layout=values.layout, device=values.device)
-            tensor_decompressed.scatter_(0, indices, values)
-            print("########### DECOMPRESSED SHAPE:\n", tensor_decompress.size())
-            return tensor_decompressed.view(shape)
-            #return tensor_decompressed
+            #values = decompressed_tensor
+            tensor_decompressed = torch.zeros(numel, dtype=decompressed_tensor.dtype, layout=decompressed_tensor.layout, device=decompressed_tensor.device)
+            tensor_decompressed.scatter_(0, indices, decompressed_tensor)
+            print("########### DECOMPRESSED SHAPE:\n", tensor_decompressed.size())
+            return tensor_decompressed
 
-            #return decompressed_tensor
 
         return fut.then(decompress)
 
