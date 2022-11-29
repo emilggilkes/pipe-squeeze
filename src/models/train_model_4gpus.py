@@ -25,6 +25,7 @@ import torch.multiprocessing as mp
 #from random_k_reducer import RandomKReducer
 from timer import Timer
 from grace_random_k import *
+from grace_random_k_comm_hook import RandomKCompressor2
 from all_reduce_timed import TimedARWrapper
 
 
@@ -265,8 +266,10 @@ def main(
     setup_ddp(rank, world_size)
     if compression_type != 'randomk':
         model = DDP(model)
-        all_reduce_wrapper = TimedARWrapper(timer)
-        model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
+        compressor = RandomKCompressor2(0.5)
+        model.register_comm_hook(state=None, hook=compressor.random_k_compress_hook)
+        #all_reduce_wrapper = TimedARWrapper(timer)
+        #model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
 
     # define train settings
     criterion = nn.CrossEntropyLoss()
