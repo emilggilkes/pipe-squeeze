@@ -27,7 +27,7 @@ class RandomKCompressor:
         """Aggregate a list of tensors."""
         return sum(tensors)
 
-    def sparsify(tensor, compress_ratio):
+    def sparsify(self, tensor, compress_ratio):
         #tensor = tensor.flatten()
         numel = tensor.numel()
         k = max(1, int(numel * compress_ratio))
@@ -42,10 +42,8 @@ class RandomKCompressor:
         world_size = group_to_use.size()
 
         tensor = bucket.buffer()
-
-        h = sum(bytes(tensor.names[0], encoding='utf8'), self.global_step) 
+        torch.manual_seed(self.global_step)
         self.global_step += 1
-        torch.manual_seed(h)
         
         indices, compressed_tensor = self.sparsify(tensor, self.compress_ratio)
 
