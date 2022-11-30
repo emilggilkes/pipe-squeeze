@@ -27,6 +27,7 @@ from timer import Timer
 #from grace_random_k import *
 from grace_random_k_comm_hook import RandomKCompressor
 from all_reduce_timed import TimedARWrapper
+from infinite_data_loader import create_infinite_data_loader
 
 
 SAMPLE_DATA_SET_PATH_PREFIX='../data/images'
@@ -45,6 +46,7 @@ def setup_argparser():
     parser.add_argument('--n-microbatches', '--mb', help ='Number of micro-batches', type=int, required = True)
     parser.add_argument('--learning-rate', '--lr', help='Learning rate', type=float, required=True)
     parser.add_argument('--num-procs', help='Number of processes to use', type=int, required=True)
+    parser.add_argument('--inf-loader', help='Whether to use infinite data loader', type=bool, required=False, default=False)
     #parser.add_argument('--num-gpus', help='Number of GPUs to use', type=int, required=True)
     parser.add_argument('--compression-type', help='Type of compression to use. Options are fp16, bf16, PowerSGD, None', default=None, required=False)
     parser.add_argument('--compression-ratio', help='Float representing compression ratio', type=float, default=None, required=False)
@@ -191,12 +193,17 @@ def main(
     compression_type=None,
     compression_ratio=None,
     save_on_finish=False,
+    inf_loader=False,
     data_set_dirpath=SAMPLE_DATA_SET_PATH_PREFIX,
 ):
     timer = Timer(skip_first=False)
-
+    n_gpus = torch.cuda.device_count()
+    
     ## DATASET
-    train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
+    if inf_loader:
+        train_loader, val_loader = create_infinite_data_loader(rank, world_size, batch_size, data_set_dirpath, n_gpus)
+    else:
+        train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
 
     # We need to initialize the RPC framework with only a single worker since we're using a
     # single process to drive multiple GPUs.
@@ -299,6 +306,7 @@ if __name__ == "__main__":
             args.compression_type,
             args.compression_ratio,
             args.save_on_finish,
+            args.inf_loader,
             data_dir_path,
         ),
         nprocs=args.num_procs,
