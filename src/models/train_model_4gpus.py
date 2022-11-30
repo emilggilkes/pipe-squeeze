@@ -201,6 +201,7 @@ def main(
     
     ## DATASET
     if inf_loader:
+        print('USING INFINITE DATA LOADER')
         train_loader, val_loader = create_infinite_data_loader(rank, world_size, batch_size, data_set_dirpath, n_gpus)
     else:
         train_loader, val_loader = create_data_loader(rank, world_size, batch_size, data_set_dirpath)
