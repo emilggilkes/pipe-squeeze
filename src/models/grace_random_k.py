@@ -1,7 +1,7 @@
 import torch
 from torch import distributed as dist
 from abc import ABC, abstractmethod
-
+import smdistributed.modelparallel.torch as smp
 
 class Memory(ABC):
     @abstractmethod
@@ -41,10 +41,11 @@ class Communicator(ABC):
     def send_receive(self, tensors, name, ctx):
         raise NotImplemented("send was not implemented.")
 
-    def __init__(self, compressor, memory, world_size):
+    def __init__(self, compressor, memory, world_size, process_group):
         self.compressor = compressor
         self.memory = memory
         self.world_size = world_size
+        self.process_group = process_group
 
     def step(self, tensor, name):
         tensor = self.memory.compensate(tensor, name)
@@ -95,7 +96,7 @@ class Allreduce(Communicator):
 
     def send_receive(self, tensors, name, ctx):
         for tensor_compressed in tensors:
-            dist.all_reduce(tensor_compressed)
+            dist.all_reduce(tensor_compressed, group=self.process_group)
             if self.compressor.average:
                 tensor_compressed.div_(self.world_size)
         return self.compressor.decompress(tensors, ctx)
