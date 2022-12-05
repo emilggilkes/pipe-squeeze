@@ -213,7 +213,7 @@ def main(
         init_method="file://{}".format(tmpfile.name)))
 
     # create stages of the model
-    module = importlib.import_module("vgg19.gpus=4_pipedream")
+    module = importlib.import_module("vgg19.gpus=4_4")
     stages = module.model()
     stage = stages["stage0"].to(torch.device(device, 2*rank))    
     stage = stages["stage1"].to(torch.device(device, 2*rank+1))
@@ -235,7 +235,7 @@ def main(
     else:
         all_reduce_wrapper = TimedARWrapper(timer)
         model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
-
+        
     # Add communication hook doing floating point compression
     if compression_type == 'fp16':
         model.register_comm_hook(state=None, hook=fp16_compress_hook)

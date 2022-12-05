@@ -24,7 +24,7 @@ def create_infinite_data_loader(rank, world_size, batch_size, data_set_dirpath, 
     batch_size = batch_size // world_size
     print(f"World size: {world_size}, setting effective batch size to {batch_size}. Should be batch size / num input gpus.")
 
-    nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, n_workers])  # number of workers
+    nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, n_workers*2])  # number of workers
 
     train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
     val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
@@ -58,7 +58,7 @@ class InfiniteDataLoader(DataLoader):
         self.iterator = super().__iter__()
 
     def __len__(self):
-        return len(self.batch_sampler.sampler)
+        return len(self.batch_sampler.sampler)  # type: ignore
 
     def __iter__(self):
         for i in range(len(self)):
