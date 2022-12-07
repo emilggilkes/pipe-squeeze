@@ -9,14 +9,14 @@ def create_infinite_data_loader(rank, world_size, batch_size, data_set_dirpath, 
 
     
     print(f"Create data loader rank {rank}")
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224),
-        transforms.ToTensor(),
-    ])
-    val_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224),
-        transforms.ToTensor()
-    ])
+    # train_transform = transforms.Compose([
+    #     transforms.RandomResizedCrop(224),
+    #     transforms.ToTensor(),
+    # ])
+    # val_transform = transforms.Compose([
+    #     transforms.RandomResizedCrop(224),
+    #     transforms.ToTensor()
+    # ])
     
     if batch_size % world_size != 0:
         raise Exception("Batch size must be a multiple of the number of workers")
@@ -25,9 +25,24 @@ def create_infinite_data_loader(rank, world_size, batch_size, data_set_dirpath, 
     print(f"World size: {world_size}, setting effective batch size to {batch_size}. Should be batch size / num input gpus.")
 
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, n_workers*2])  # number of workers
+    
+    train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(32),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    ])
+    val_transform = transforms.Compose([
+        transforms.RandomResizedCrop(32),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    ])
+    train_set = datasets.CIFAR10(root=f"{data_set_dirpath}/train", train=True, 
+                        transform=train_transform)
+    val_set = datasets.CIFAR10(root=f"{data_set_dirpath}/val", train=False, 
+                        transform=val_transform)
 
-    train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
-    val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
+    # train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
+    # val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
 
     train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
     val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)

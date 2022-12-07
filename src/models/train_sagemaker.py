@@ -109,7 +109,7 @@ def train(args):
         _transports=["uv"]),)
 
     # create stages of the model
-    module = importlib.import_module("vgg19.gpus=4_4")
+    module = importlib.import_module("vgg19.gpus=4_4_pretrained")
     stages = module.model()
     stages["stage0"] = stages["stage0"].to(torch.device(device, 0)) # 2*host_rank))    
     stages["stage1"] = stages["stage1"].to(torch.device(device, 1)) # 2*host_rank+1))
