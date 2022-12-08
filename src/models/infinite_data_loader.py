@@ -44,8 +44,8 @@ def create_infinite_data_loader(rank, world_size, batch_size, data_set_dirpath, 
     # train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
     # val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
 
-    train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
-    val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False)
+    train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False, seed=243)
+    val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False, seed=243)
 
     train_loader = InfiniteDataLoader(train_set,
                   batch_size=batch_size,
