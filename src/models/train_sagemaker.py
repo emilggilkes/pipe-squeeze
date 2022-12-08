@@ -21,6 +21,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.pipeline.sync import Pipe
 # from torch.utils.data.distributed import DistributedSampler
 from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compress_hook, bf16_compress_hook
+from torch.distributed.algorithms.ddp_comm_hooks.powerSGD_hook import PowerSGDState, powerSGD_hook
 
 # import torch.multiprocessing as mp
 
@@ -160,6 +161,9 @@ def train(args):
     if args.compression_type == 'randomk':
         compressor = RandomKCompressor(args.compression_ratio, timer)
         model.register_comm_hook(state=None, hook=compressor.random_k_compress_hook)
+    elif args.compression_type == 'powersgd':
+        state = PowerSGDState(matrix_approximation_rank=2)
+        model.register_comm_hook(state, powerSGD_hook)
     else:
         all_reduce_wrapper = TimedARWrapper(timer)
         model.register_comm_hook(state=None, hook=all_reduce_wrapper.reduce)
