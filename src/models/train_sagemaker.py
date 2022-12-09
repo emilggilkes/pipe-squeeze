@@ -22,7 +22,7 @@ from torch.distributed.pipeline.sync import Pipe
 # from torch.utils.data.distributed import DistributedSampler
 from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compress_hook, bf16_compress_hook
 from torch.distributed.algorithms.ddp_comm_hooks.powerSGD_hook import PowerSGDState, powerSGD_hook
-
+#from powersgd_hook import PowerSGDState, powerSGD_hook
 # import torch.multiprocessing as mp
 
 #from random_k_reducer import RandomKReducer
@@ -55,7 +55,7 @@ def setup_argparser():
     parser.add_argument('--learning-rate', '--lr', help='Learning rate', type=float, required=True)
     # parser.add_argument('--num-procs', help='Number of processes to use', type=int, required=True)
     # parser.add_argument('--num-gpus', help='Number of GPUs to use', type=int, required=True)
-    parser.add_argument('--compression-type', help='Type of compression to use. Options are fp16, bf16, PowerSGD, None', default=None, required=False)
+    parser.add_argument('--compression-type', help='Type of compression to use. Options are fp16, bf16, powersgd, None', default=None, required=False)
     parser.add_argument('--compression-ratio', help='Float representing compression ratio', type=float, default=None, required=False)
     #parser.add_argument('--use-pipeline-parallel', help='Whether or not to use pipeline parallelism (GPipe)', default=False, type=bool)
     # parser.add_argument('--save-on-finish', help='Saves model weights upon training completion', type=bool, default=False, required=False)
@@ -162,7 +162,8 @@ def train(args):
         compressor = RandomKCompressor(args.compression_ratio, timer)
         model.register_comm_hook(state=None, hook=compressor.random_k_compress_hook)
     elif args.compression_type == 'powersgd':
-        state = PowerSGDState(matrix_approximation_rank=2)
+        state = PowerSGDState(process_group=None, matrix_approximation_rank=2, start_powerSGD_iter=50)
+        #timed_powersgd = TimedPowerSGD(timer)
         model.register_comm_hook(state, powerSGD_hook)
     else:
         all_reduce_wrapper = TimedARWrapper(timer)
