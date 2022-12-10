@@ -18,8 +18,8 @@ def create_infinite_data_loader(rank, world_size, batch_size, data_set_dirpath, 
     #     transforms.ToTensor()
     # ])
     
-    if batch_size % world_size != 0:
-        raise Exception("Batch size must be a multiple of the number of workers")
+    # if batch_size % world_size != 0:
+    #     raise Exception("Batch size must be a multiple of the number of workers")
 
     batch_size = batch_size // world_size
     print(f"World size: {world_size}, setting effective batch size to {batch_size}. Should be batch size / num input gpus.")
@@ -43,23 +43,35 @@ def create_infinite_data_loader(rank, world_size, batch_size, data_set_dirpath, 
 
     # train_set = ImageFolder(f"{data_set_dirpath}/train", transform = train_transform)
     # val_set = ImageFolder(f"{data_set_dirpath}/val", transform = val_transform)
+    if world_size > 1:
+        train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False, seed=243)
+        val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False, seed=243)
 
-    train_sampler = DistributedSampler(train_set, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False, seed=243)
-    val_sampler = DistributedSampler(val_set, num_replicas=world_size, rank=rank, shuffle=False, drop_last=False, seed=243)
+        train_loader = InfiniteDataLoader(train_set,
+                    batch_size=batch_size,
+                    num_workers=nw,
+                    sampler=train_sampler,
+                    pin_memory=True,
+                    )
+        val_loader = InfiniteDataLoader(val_set,
+                    batch_size=batch_size,
+                    num_workers=nw,
+                    sampler=val_sampler,
+                    pin_memory=True,
+                    )
+        return train_loader, val_loader
+    else:
+        train_loader = DataLoader(train_set,
+                    batch_size=batch_size,
+                    num_workers=nw//2,
+                    shuffle=True,
+                    )
+        val_loader = DataLoader(val_set,
+                    batch_size=batch_size,
+                    num_workers= nw//2,
+                    )
+        return train_loader, val_loader
 
-    train_loader = InfiniteDataLoader(train_set,
-                  batch_size=batch_size,
-                  num_workers=nw,
-                  sampler=train_sampler,
-                  pin_memory=True,
-                  )
-    val_loader = InfiniteDataLoader(val_set,
-                  batch_size=batch_size,
-                  num_workers=nw,
-                  sampler=val_sampler,
-                  pin_memory=True,
-                  )
-    return train_loader, val_loader
 
 
 class InfiniteDataLoader(DataLoader):
