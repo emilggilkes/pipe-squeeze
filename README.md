@@ -15,4 +15,6 @@ References:
 
 [GRACE](https://github.com/sands-lab/grace)
 
+[On the Utility of Gradient Compression](https://github.com/uw-mad-dash/GradCompressionUtility)
+
 PyTorch
