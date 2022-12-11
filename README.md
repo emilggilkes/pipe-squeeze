@@ -12,5 +12,7 @@ In the notebook you will need to put in your AWS_ACCESS_KEY_ID, AWS_SECRET_ACCES
 References:
 ==============================
 [PowerSGD](https://github.com/epfml/powersgd)
+
 [GRACE](https://github.com/sands-lab/grace)
+
 PyTorch
